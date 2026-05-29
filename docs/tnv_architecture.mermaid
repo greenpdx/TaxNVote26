@@ -1,0 +1,100 @@
+---
+title: TNV Budget Tree — WASM Architecture
+---
+flowchart TB
+    subgraph JS["JavaScript / Vue Display Layer"]
+        UI[Slider / Input UI]
+        PATCH[Patch DOM with changeset]
+        INIT_CALL["init(json_string)"]
+        ADJ_CALL["adjust(id, new_val)"]
+        LOCK_CALL["lock(id) / unlock(id)"]
+        QUERY_CALL["get_value(id)"]
+        RESET_CALL["reset(id) / reset_all()"]
+        LOAD_CALL["get_all_values()"]
+    end
+
+    subgraph BOUNDARY["WASM Boundary — minimal data crosses"]
+        direction LR
+        IN1["JSON string (once)"]
+        IN2["id + f64 (per call)"]
+        OUT1["opaque handle"]
+        OUT2["changeset: &lpar;idx, val&rpar;[]"]
+        OUT3["single f64"]
+        OUT4["flat f64 slice (once)"]
+    end
+
+    subgraph RUST["Rust / WASM — owns all data"]
+        TREE["BudgetTree struct
+        ─────────────────
+        nodes: Vec&lt;BudgetNode&gt;
+        id_map: HashMap&lt;String,usize&gt;
+        config: BudgetConfig"]
+
+        NODE["BudgetNode
+        ─────────────
+        idx: usize
+        id: String
+        name: String
+        value: f64
+        default_value: f64
+        locked: bool
+        parent: usize
+        children: Vec&lt;usize&gt;"]
+
+        ALG["Adjustment Algorithm
+        ─────────────────────
+        1. Validate target node
+        2. Compute delta
+        3. Clamp to bounds
+        4. Redistribute to unlocked siblings
+        5. Recurse children proportionally
+        6. Enforce exact sum
+        7. Collect changeset"]
+
+        TREE --> NODE
+        TREE --> ALG
+    end
+
+    %% Init flow
+    UI -->|user loads page| INIT_CALL
+    INIT_CALL -->|JSON string| IN1
+    IN1 --> TREE
+    TREE -->|opaque handle| OUT1
+    OUT1 --> INIT_CALL
+    INIT_CALL -->|one-time load| LOAD_CALL
+    LOAD_CALL --> OUT4
+    OUT4 --> PATCH
+
+    %% Adjust flow
+    UI -->|slider drag| ADJ_CALL
+    ADJ_CALL -->|id + f64| IN2
+    IN2 --> ALG
+    ALG -->|mutates| NODE
+    ALG -->|changeset| OUT2
+    OUT2 --> PATCH
+    PATCH --> UI
+
+    %% Query flow
+    UI --> QUERY_CALL
+    QUERY_CALL -->|id| IN2
+    IN2 --> TREE
+    TREE -->|f64| OUT3
+    OUT3 --> QUERY_CALL
+
+    %% Lock flow
+    UI --> LOCK_CALL
+    LOCK_CALL -->|id| IN2
+    IN2 --> TREE
+
+    %% Reset flow
+    UI --> RESET_CALL
+    RESET_CALL -->|id| IN2
+    IN2 --> ALG
+    ALG -->|changeset| OUT2
+
+    style RUST fill:#1a1a2e,color:#e0e0e0,stroke:#e94560
+    style BOUNDARY fill:#16213e,color:#e0e0e0,stroke:#0f3460
+    style JS fill:#0f3460,color:#e0e0e0,stroke:#53a8b6
+    style TREE fill:#e94560,color:#fff,stroke:#fff
+    style ALG fill:#533483,color:#fff,stroke:#fff
+    style NODE fill:#0f3460,color:#e0e0e0,stroke:#53a8b6

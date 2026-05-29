@@ -1,0 +1,35 @@
+# Rust
+/target/
+Cargo.lock
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# WASM build output (built into frontend/src/wasm by `npm run build-wasm`)
+crates/tnv-budget-tree/pkg/
+frontend/src/wasm/
+
+# wasm-pack scratch input (symlink to data/budauth.csv)
+crates/tnv-budget-tree/data/
+
+# Data
+data/store.json
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Environment
+.env
+frontend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

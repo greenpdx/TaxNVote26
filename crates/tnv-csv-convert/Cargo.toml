@@ -1,0 +1,12 @@
+[package]
+name = "tnv-csv-convert"
+version = "0.1.0"
+edition = "2024"
+description = "Convert OMB Public Budget Database XLSX to TNV budauth.csv"
+
+[[bin]]
+name = "tnv-csv-convert"
+path = "src/main.rs"
+
+[dependencies]
+calamine = "0.34"

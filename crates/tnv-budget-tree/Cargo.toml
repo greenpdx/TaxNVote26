@@ -1,0 +1,27 @@
+[package]
+name = "tnv-budget-tree"
+version = "0.1.0"
+edition = "2024"
+authors = ["Shaun Savage <savages@taxnvote.org>"]
+description = "Hierarchical budget adjustment algorithm for Tax N Vote"
+repository = "https://github.com/greenpdx/taxnvote"
+homepage = "https://taxnvote.org/"
+license = "LGPL-3.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+wasm = ["wasm-bindgen", "js-sys", "console_error_panic_hook"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = { version = "0.2", features = ["serde-serialize"], optional = true }
+js-sys = { version = "0.3", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+serde_json = "1"

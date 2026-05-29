@@ -1,0 +1,29 @@
+{
+  "name": "tnv-vue",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build-wasm": "cd ../crates/tnv-budget-tree && wasm-pack build --target web --out-dir ../../frontend/src/wasm --features wasm",
+    "dev": "npm run build-wasm && vite",
+    "build": "npm run build-wasm && vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "npm run build-wasm && vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "pinia": "^3.0.4",
+    "vue": "^3.5.34"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/test-utils": "^2.4.10",
+    "@vue/tsconfig": "^0.9.1",
+    "happy-dom": "^20.9.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.7",
+    "vue-tsc": "^3.2.8"
+  }
+}
