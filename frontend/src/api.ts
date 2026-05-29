@@ -124,13 +124,10 @@ export async function getAggregate(fiscalYear: string): Promise<AggregateRespons
 }
 
 // ─── Checksum (must byte-match server: sorted "id:pct.6f" join "," → sha256) ──
-async function sha256Hex(s: string): Promise<string> {
-  // Web Crypto only exists in secure contexts (https / localhost). Over a plain
-  // HTTP LAN origin crypto.subtle is undefined, so fall back to a pure-JS impl.
-  if (globalThis.crypto?.subtle) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
-    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
-  }
+// Always use the pure-JS SHA-256: Web Crypto (crypto.subtle) only exists in
+// secure contexts (https / localhost), so it's unavailable over a plain-HTTP
+// LAN origin. The JS impl works everywhere and is plenty fast for our sizes.
+function sha256Hex(s: string): string {
   return sha256Fallback(s)
 }
 
@@ -209,7 +206,7 @@ export async function buildTaxDollarCsv(
 
   const sorted = rounded.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   const canonical = sorted.map(a => `${a.id}:${a.pct.toFixed(6)}`).join(',')
-  const checksum = `sha256:${await sha256Hex(canonical)}`
+  const checksum = `sha256:${sha256Hex(canonical)}`
 
   const ts = new Date().toISOString().replace(/\.\d+Z$/, 'Z')
   const lines = [

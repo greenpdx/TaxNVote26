@@ -48,6 +48,74 @@ pub fn topic_for(agency_code: &str, bureau_code: &str) -> &'static str {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nine_topics_in_fixed_order() {
+        assert_eq!(TOPICS.len(), 9);
+        let ids: Vec<&str> = TOPICS.iter().map(|t| t.id).collect();
+        assert_eq!(ids, vec!["def", "va", "edu", "health", "infra", "sci", "env", "dhs", "oth"]);
+    }
+
+    #[test]
+    fn agency_level_defaults() {
+        // Wholesale-mapped agencies (bureau code doesn't matter unless overridden).
+        assert_eq!(topic_for("007", "00"), "def");   // DoD-Military
+        assert_eq!(topic_for("200", "00"), "def");   // Other Defense-Civil
+        assert_eq!(topic_for("467", "00"), "def");   // Intelligence
+        assert_eq!(topic_for("029", "00"), "va");
+        assert_eq!(topic_for("018", "00"), "edu");
+        assert_eq!(topic_for("009", "00"), "health");
+        assert_eq!(topic_for("024", "00"), "dhs");
+        assert_eq!(topic_for("021", "00"), "infra");
+        assert_eq!(topic_for("202", "00"), "infra"); // Army Corps Civil Works
+        assert_eq!(topic_for("026", "00"), "sci");   // NASA
+        assert_eq!(topic_for("422", "00"), "sci");   // NSF
+        assert_eq!(topic_for("452", "00"), "sci");   // Smithsonian
+        assert_eq!(topic_for("020", "00"), "env");   // EPA
+        assert_eq!(topic_for("010", "99"), "env");   // Interior default (not an override)
+    }
+
+    #[test]
+    fn energy_bureau_overrides() {
+        assert_eq!(topic_for("019", "05"), "def"); // NNSA
+        assert_eq!(topic_for("019", "10"), "def"); // Defense env activities
+        assert_eq!(topic_for("019", "20"), "sci"); // Energy programs (Office of Science etc.)
+        assert_eq!(topic_for("019", "60"), "oth"); // Departmental admin → default OTH
+    }
+
+    #[test]
+    fn interior_bureau_overrides() {
+        assert_eq!(topic_for("010", "12"), "sci"); // USGS
+        assert_eq!(topic_for("010", "77"), "edu"); // Bureau of Indian Education
+        assert_eq!(topic_for("010", "76"), "oth"); // Bureau of Indian Affairs
+        assert_eq!(topic_for("010", "24"), "env"); // NPS → Interior default
+    }
+
+    #[test]
+    fn commerce_bureau_overrides() {
+        assert_eq!(topic_for("006", "48"), "sci");   // NOAA
+        assert_eq!(topic_for("006", "55"), "sci");   // NIST
+        assert_eq!(topic_for("006", "60"), "infra"); // NTIA (broadband)
+        assert_eq!(topic_for("006", "07"), "oth");   // Census → default
+    }
+
+    #[test]
+    fn agriculture_bureau_overrides() {
+        assert_eq!(topic_for("005", "96"), "env"); // Forest Service
+        assert_eq!(topic_for("005", "53"), "env"); // NRCS
+        assert_eq!(topic_for("005", "84"), "oth"); // Food and Nutrition Service → default
+    }
+
+    #[test]
+    fn unmapped_agency_falls_to_other() {
+        assert_eq!(topic_for("999", "00"), "oth");
+        assert_eq!(topic_for("", ""), "oth");
+    }
+}
+
 fn topic_for_agency(agency_code: &str) -> &'static str {
     match agency_code {
         "007" | "200" | "467" => "def", // DoD-Military, Other Defense-Civil, Intelligence

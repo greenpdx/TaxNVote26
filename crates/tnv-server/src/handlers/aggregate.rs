@@ -128,3 +128,80 @@ fn node_stat(node_id: String, mut v: Vec<f64>) -> NodeStat {
 fn internal(msg: String) -> (StatusCode, Json<Value>) {
     (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": msg})))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leaf_rolls_up_to_topic_agency_bureau_self() {
+        assert_eq!(
+            ancestors_of("c:def:007:10:0500"),
+            vec!["t:def", "a:def:007", "b:def:007:10", "c:def:007:10:0500"],
+        );
+    }
+
+    #[test]
+    fn bureau_rolls_up_to_topic_agency_self() {
+        assert_eq!(
+            ancestors_of("b:env:010:12"),
+            vec!["t:env", "a:env:010", "b:env:010:12"],
+        );
+    }
+
+    #[test]
+    fn agency_rolls_up_to_topic_self() {
+        assert_eq!(ancestors_of("a:dhs:024"), vec!["t:dhs", "a:dhs:024"]);
+    }
+
+    #[test]
+    fn topic_only_returns_self() {
+        assert_eq!(ancestors_of("t:def"), vec!["t:def"]);
+    }
+
+    fn approx(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
+
+    #[test]
+    fn stat_uniform_sample() {
+        let s = node_stat("x".into(), vec![0.5; 4]);
+        assert_eq!(s.count, 4);
+        assert!(approx(s.mean, 0.5));
+        assert!(approx(s.median, 0.5));
+        assert!(approx(s.trimmed_mean, 0.5));
+        assert!(approx(s.std_dev, 0.0));
+        assert_eq!(s.min, 0.5);
+        assert_eq!(s.max, 0.5);
+    }
+
+    #[test]
+    fn stat_trimmed_mean_drops_extremes_at_n_ge_10() {
+        // N=12 → trim = floor(0.1 * 12) = 1 from each end → average middle 10.
+        let v = vec![0.0, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0];
+        let s = node_stat("x".into(), v.clone());
+        assert_eq!(s.count, 12);
+        let plain_mean = v.iter().sum::<f64>() / 12.0;
+        assert!(approx(s.mean, plain_mean));
+        // After dropping one extreme from each end the sample is
+        // [0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1].
+        let trimmed = (0.0 + 0.1 * 9.0) / 10.0;
+        assert!(approx(s.trimmed_mean, trimmed));
+        assert!(approx(s.median, 0.1)); // (v[5] + v[6]) / 2
+        assert_eq!(s.min, 0.0);
+        assert_eq!(s.max, 1.0);
+    }
+
+    #[test]
+    fn stat_small_n_keeps_trim_zero_so_equals_mean() {
+        // N < 10 → trim = floor(0.1 * N) = 0 → trimmed_mean == mean.
+        let v = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+        let s = node_stat("x".into(), v);
+        assert!(approx(s.trimmed_mean, 0.3));
+        assert!(approx(s.mean, 0.3));
+    }
+
+    #[test]
+    fn stat_median_odd_n_is_middle_value() {
+        let s = node_stat("x".into(), vec![0.1, 0.5, 0.4, 0.2, 0.3]);
+        assert!(approx(s.median, 0.3));
+    }
+}

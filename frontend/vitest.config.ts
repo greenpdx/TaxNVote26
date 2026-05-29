@@ -7,6 +7,8 @@ export default defineConfig({
     environment: 'happy-dom',
     globals: true,
     setupFiles: ['./tests/setup.ts'],
+    include: ['tests/**/*.test.ts'],
+    exclude: ['node_modules/**', 'dist/**', 'e2e/**'],
     // Drop the wasm shim under node_modules out of scope so vitest doesn't
     // touch the file outside our explicit init().
     server: { deps: { inline: [/wasm/] } },

@@ -17,7 +17,7 @@ function snap(n: BudgetNode): Snapshot {
 
 function findLeafWithUnlockedSiblings(store: ReturnType<typeof useBudgetStore>, minSiblings = 1): Snapshot {
   for (const n of store.nodes) {
-    if (n.level !== 3 || n.parent < 0) continue
+    if (n.level !== 4 || n.parent < 0) continue
     const siblings = store.nodes.filter(s => s.parent === n.parent && s.idx !== n.idx && !s.locked)
     if (siblings.length >= minSiblings && n.value > 1000 && !n.locked) return snap(n)
   }
@@ -26,7 +26,7 @@ function findLeafWithUnlockedSiblings(store: ReturnType<typeof useBudgetStore>, 
 
 function findBureau(store: ReturnType<typeof useBudgetStore>): Snapshot {
   for (const n of store.nodes) {
-    if (n.level !== 2 || n.parent < 0) continue
+    if (n.level !== 3 || n.parent < 0) continue
     const siblings = store.nodes.filter(s => s.parent === n.parent && s.idx !== n.idx)
     const children = store.nodes.filter(c => c.parent === n.idx)
     if (siblings.length >= 1 && children.length >= 1 && n.value > 1000) return snap(n)
@@ -165,7 +165,7 @@ describe('budget store ↔ WASM', () => {
     // Mutate via a different leaf so we have something to reset.
     const other = (() => {
       for (const n of store.nodes) {
-        if (n.idx === leaf.idx || n.level !== 3 || n.parent < 0 || n.value <= 1000) continue
+        if (n.idx === leaf.idx || n.level !== 4 || n.parent < 0 || n.value <= 1000) continue
         const sibs = store.nodes.filter(s => s.parent === n.parent && s.idx !== n.idx && !s.locked)
         if (sibs.length >= 1) return snap(n)
       }

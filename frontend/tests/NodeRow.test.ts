@@ -10,7 +10,7 @@ import type { BudgetNode } from '../src/types/budget'
 
 function findLeafWithSibling(store: ReturnType<typeof useBudgetStore>): BudgetNode {
   for (const n of store.nodes) {
-    if (n.level !== 3 || n.parent < 0) continue
+    if (n.level !== 4 || n.parent < 0) continue
     const sibs = store.nodes.filter(s => s.parent === n.parent && s.idx !== n.idx && !s.locked)
     if (sibs.length >= 1 && n.value > 1000) return n
   }
@@ -81,7 +81,8 @@ describe('NodeRow', () => {
 
   it('expand button reveals children, child renders recursively', async () => {
     const store = await mountedStore()
-    // Pick an agency (level 1) that has children
+    store.mode = 'full' // drill-down (expand button) only exists in full mode
+    // Pick a topic (level 1) that has children
     const agency = store.nodes.find(n => n.level === 1 && n.children.length > 0)!
     const wrapper = mount(NodeRow, { props: { node: store.nodes[agency.idx] } })
 
