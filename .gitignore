@@ -5,6 +5,7 @@ Cargo.lock
 # Node
 frontend/node_modules/
 frontend/dist/
+package-lock.json
 
 # Playwright
 frontend/test-results/
