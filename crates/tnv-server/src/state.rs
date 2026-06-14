@@ -131,6 +131,16 @@ pub struct AppState {
     pub data_dir: PathBuf,
     pub jwt_secret: String,
     pub fiscal_year: String,
+    /// JWT lifetime in seconds (configurable via JWT_TTL_HOURS).
+    pub jwt_ttl_secs: i64,
+    /// When true, derive the client IP from X-Forwarded-For (set by a trusted
+    /// reverse proxy). When false, use the TCP peer address.
+    pub trusted_proxy: bool,
+    /// When true, the demo PIN identity endpoint (/api/identify) is mounted.
+    /// Off by default; must never be enabled on a public deployment.
+    /// Routing is decided at startup; retained for the admin config layer.
+    #[allow(dead_code)]
+    pub enable_demo_identity: bool,
     pub valid_node_ids: Arc<HashSet<String>>,
     pub rate_limiter: Arc<RwLock<RateLimiter>>,
     pub challenges: Arc<RwLock<ChallengeStore>>,
@@ -148,6 +158,9 @@ impl AppState {
         data_dir: PathBuf,
         jwt_secret: String,
         fiscal_year: String,
+        jwt_ttl_secs: i64,
+        trusted_proxy: bool,
+        enable_demo_identity: bool,
         valid_node_ids: HashSet<String>,
         mailer: Arc<dyn Mailer>,
     ) -> Self {
@@ -157,12 +170,24 @@ impl AppState {
             data_dir,
             jwt_secret,
             fiscal_year,
+            jwt_ttl_secs,
+            trusted_proxy,
+            enable_demo_identity,
             valid_node_ids: Arc::new(valid_node_ids),
             rate_limiter: Arc::new(RwLock::new(RateLimiter::new())),
             challenges: Arc::new(RwLock::new(ChallengeStore::new())),
             mailer,
             aggregate_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
+    }
+
+    /// Apply a sliding-window rate limit for `ip` on `endpoint`.
+    /// Ok(()) if allowed, Err(retry_after_secs) if limited.
+    pub async fn rate_limit(
+        &self, ip: IpAddr, endpoint: &'static str, max: usize, window_secs: u64,
+    ) -> Result<(), u64> {
+        let mut rl = self.rate_limiter.write().await;
+        rl.check(ip, endpoint, max, window_secs)
     }
 
     pub async fn next_template_receipt(&self) -> Result<String, sqlx::Error> {

@@ -2,6 +2,7 @@ use axum::{extract::{State, Path}, http::StatusCode, Json};
 use serde_json::{json, Value};
 use sqlx::Row;
 use crate::csv_parse::parse_template_csv;
+use crate::extract::ClientIp;
 use crate::models::*;
 use crate::state::*;
 use crate::validation::validate_template;
@@ -49,9 +50,13 @@ pub async fn get_template(
 
 pub async fn create_template(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     claims: Claims,
     body: String,
 ) -> Result<Json<TemplateReceipt>, (StatusCode, Json<Value>)> {
+    state.rate_limit(ip, "template", RATE_TEMPLATE_MAX, RATE_TEMPLATE_WINDOW_SECS)
+        .await.map_err(too_many)?;
+
     let parsed = parse_template_csv(&body).map_err(bad)?;
     validate_template(&parsed, &state.valid_node_ids).map_err(bad)?;
 
@@ -108,8 +113,14 @@ fn bad(msg: String) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({"error": msg})))
 }
 fn internal(msg: String) -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": msg})))
+    tracing::error!("internal error: {msg}");
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "internal server error"})))
 }
 fn not_found(msg: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::NOT_FOUND, Json(json!({"error": msg})))
+}
+fn too_many(retry_after: u64) -> (StatusCode, Json<Value>) {
+    (StatusCode::TOO_MANY_REQUESTS, Json(json!({
+        "error": "too many requests", "retry_after_secs": retry_after
+    })))
 }

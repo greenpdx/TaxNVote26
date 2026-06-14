@@ -33,6 +33,19 @@ pub const RATE_LOGIN_MAX: usize = 10;
 pub const RATE_LOGIN_WINDOW_SECS: u64 = 900;
 pub const RATE_VERIFY_MAX: usize = 10;
 pub const RATE_VERIFY_WINDOW_SECS: u64 = 900;
+pub const RATE_CHALLENGE_MAX: usize = 30;
+pub const RATE_CHALLENGE_WINDOW_SECS: u64 = 900;
+pub const RATE_IDENTIFY_MAX: usize = 5;
+pub const RATE_IDENTIFY_WINDOW_SECS: u64 = 900;
+pub const RATE_AGGREGATE_MAX: usize = 60;
+pub const RATE_AGGREGATE_WINDOW_SECS: u64 = 60;
+pub const RATE_SUBMIT_MAX: usize = 10;
+pub const RATE_SUBMIT_WINDOW_SECS: u64 = 900;
+pub const RATE_TEMPLATE_MAX: usize = 10;
+pub const RATE_TEMPLATE_WINDOW_SECS: u64 = 900;
+
+/// Max failed verification-code attempts before the pending row is burned.
+pub const MAX_VERIFY_ATTEMPTS: i64 = 5;
 
 // ─── Auth ─────────────────────────────────────────────────────────
 

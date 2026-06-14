@@ -2,6 +2,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use serde_json::{json, Value};
 use sqlx::Row;
 use crate::auth::{create_jwt, hash_secret};
+use crate::extract::ClientIp;
 use crate::models::*;
 use crate::state::*;
 
@@ -11,8 +12,12 @@ use crate::state::*;
 // so the existing Claims extractor protects submit / mine.
 pub async fn identify(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Json(req): Json<IdentifyRequest>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<Value>)> {
+    state.rate_limit(ip, "identify", RATE_IDENTIFY_MAX, RATE_IDENTIFY_WINDOW_SECS)
+        .await.map_err(too_many)?;
+
     let name = req.name.trim().to_string();
     if name.len() < PERSON_NAME_MIN || name.len() > PERSON_NAME_MAX {
         return Err(bad(format!("name must be {}-{} chars", PERSON_NAME_MIN, PERSON_NAME_MAX)));
@@ -47,7 +52,7 @@ pub async fn identify(
         row.try_get("id").map_err(|e| internal(e.to_string()))?
     };
 
-    let token = create_jwt(person_id, &name, 0, &state.jwt_secret).map_err(internal)?;
+    let token = create_jwt(person_id, &name, 0, state.jwt_ttl_secs, &state.jwt_secret).map_err(internal)?;
     Ok(Json(AuthResponse { token, username: name }))
 }
 
@@ -55,5 +60,11 @@ fn bad(msg: String) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({"error": msg})))
 }
 fn internal(msg: String) -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": msg})))
+    tracing::error!("internal error: {msg}");
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "internal server error"})))
+}
+fn too_many(retry_after: u64) -> (StatusCode, Json<Value>) {
+    (StatusCode::TOO_MANY_REQUESTS, Json(json!({
+        "error": "too many requests", "retry_after_secs": retry_after
+    })))
 }

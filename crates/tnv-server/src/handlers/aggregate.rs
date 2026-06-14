@@ -3,6 +3,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 use std::collections::HashMap;
+use crate::extract::ClientIp;
 use crate::models::*;
 use crate::state::*;
 
@@ -18,9 +19,19 @@ pub struct AggQuery {
 // fiscal_year; recomputed only after a submission changes the data.
 pub async fn aggregate(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Query(q): Query<AggQuery>,
 ) -> Result<Json<AggregateResponse>, (StatusCode, Json<Value>)> {
+    state.rate_limit(ip, "aggregate", RATE_AGGREGATE_MAX, RATE_AGGREGATE_WINDOW_SECS)
+        .await.map_err(too_many)?;
+
+    // Only the active fiscal year is served. Accepting arbitrary years would let
+    // an attacker force unbounded cache misses (each year is a separate key),
+    // each triggering a full recompute.
     let fy = q.fiscal_year.unwrap_or_else(|| state.fiscal_year.clone());
+    if fy != state.fiscal_year {
+        return Err(bad(format!("aggregate is only available for the active fiscal year ({})", state.fiscal_year)));
+    }
 
     // Serve cached result if present (no change since last compute).
     if let Some(cached) = state.aggregate_cache.read().await.get(&fy) {
@@ -102,11 +113,19 @@ fn ancestors_of(node_id: &str) -> Vec<String> {
 
 fn node_stat(node_id: String, mut v: Vec<f64>) -> NodeStat {
     let count = v.len();
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    if count == 0 {
+        return NodeStat {
+            node_id, count: 0, mean: 0.0, median: 0.0,
+            trimmed_mean: 0.0, std_dev: 0.0, min: 0.0, max: 0.0,
+        };
+    }
+    // pcts are range-checked at submit time, so NaN shouldn't occur; treat any
+    // incomparable value as Equal rather than panicking.
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let sum: f64 = v.iter().sum();
     let mean = sum / count as f64;
-    let min = *v.first().unwrap();
-    let max = *v.last().unwrap();
+    let min = *v.first().unwrap_or(&0.0);
+    let max = *v.last().unwrap_or(&0.0);
     let median = if count % 2 == 1 {
         v[count / 2]
     } else {
@@ -125,8 +144,17 @@ fn node_stat(node_id: String, mut v: Vec<f64>) -> NodeStat {
     NodeStat { node_id, count, mean, median, trimmed_mean, std_dev, min, max }
 }
 
+fn bad(msg: String) -> (StatusCode, Json<Value>) {
+    (StatusCode::BAD_REQUEST, Json(json!({"error": msg})))
+}
 fn internal(msg: String) -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": msg})))
+    tracing::error!("internal error: {msg}");
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "internal server error"})))
+}
+fn too_many(retry_after: u64) -> (StatusCode, Json<Value>) {
+    (StatusCode::TOO_MANY_REQUESTS, Json(json!({
+        "error": "too many requests", "retry_after_secs": retry_after
+    })))
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 mod auth;
 mod csv_parse;
+mod extract;
 mod handlers;
 mod mailer;
 mod models;
@@ -59,6 +60,27 @@ async fn run() -> Result<(), String> {
     let data_dir = std::env::var("DATA_DIR").unwrap_or_else(|_| "data".into());
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
 
+    // JWT lifetime (hours). Short-lived since there is no revocation yet.
+    let jwt_ttl_hours: i64 = std::env::var("JWT_TTL_HOURS").ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|h| *h > 0)
+        .unwrap_or(2);
+    let jwt_ttl_secs = jwt_ttl_hours * 3600;
+
+    // Honor X-Forwarded-For only when explicitly told we're behind a trusted
+    // proxy (e.g. Caddy). Otherwise the header is attacker-controlled.
+    let trusted_proxy = env_flag("TRUSTED_PROXY", false);
+
+    // Demo PIN identity (/api/identify). Off by default — it is an
+    // impersonation oracle and must stay disabled on public deployments.
+    let enable_demo_identity = env_flag("ENABLE_DEMO_IDENTITY", false);
+    if enable_demo_identity {
+        tracing::warn!(
+            "ENABLE_DEMO_IDENTITY is ON: /api/identify (name + 4-digit PIN) is mounted. \
+             This allows trivial impersonation and must NOT be enabled in production."
+        );
+    }
+
     // ─── Filesystem prep (sqlite needs parent dir to exist) ──────
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("create data_dir {data_dir}: {e}"))?;
@@ -73,7 +95,8 @@ async fn run() -> Result<(), String> {
     let pool = AnyPoolOptions::new()
         .max_connections(10)
         .connect(&database_url).await
-        .map_err(|e| format!("connect {database_url}: {e}"))?;
+        // Do not interpolate database_url — it may carry a password.
+        .map_err(|e| format!("database connection failed ({:?}): {e}", backend))?;
 
     match backend {
         DbBackend::Sqlite => {
@@ -89,7 +112,7 @@ async fn run() -> Result<(), String> {
     }
 
     // ─── Mailer ──────────────────────────────────────────────────
-    let mailer = mailer::from_env();
+    let mailer = mailer::from_env()?;
 
     // ─── AppState ────────────────────────────────────────────────
     let state = AppState::new(
@@ -98,6 +121,9 @@ async fn run() -> Result<(), String> {
         std::path::PathBuf::from(&data_dir),
         jwt_secret,
         fiscal_year.clone(),
+        jwt_ttl_secs,
+        trusted_proxy,
+        enable_demo_identity,
         valid_node_ids,
         mailer,
     );
@@ -115,14 +141,13 @@ async fn run() -> Result<(), String> {
         });
     }
 
-    let api = Router::new()
+    let mut api = Router::new()
         .route("/health", get(handlers::health::health))
         .route("/auth/challenge", get(handlers::auth::challenge))
         .route("/auth/register", post(handlers::auth::register))
         .route("/auth/verify", post(handlers::auth::verify))
         .route("/auth/login", post(handlers::auth::login))
         .route("/auth/me", get(handlers::auth::me))
-        .route("/identify", post(handlers::identity::identify))
         .route("/aggregate", get(handlers::aggregate::aggregate))
         .route("/templates", get(handlers::templates::list_templates))
         .route("/templates", post(handlers::templates::create_template))
@@ -130,6 +155,10 @@ async fn run() -> Result<(), String> {
         .route("/taxdollar", post(handlers::taxdollar::submit_taxdollar))
         .route("/taxdollar/mine", get(handlers::taxdollar::my_taxdollars))
         .route("/taxdollar/{receipt_token}", get(handlers::taxdollar::get_taxdollar));
+
+    if enable_demo_identity {
+        api = api.route("/identify", post(handlers::identity::identify));
+    }
 
     let static_service = ServeDir::new("static")
         .not_found_service(ServeFile::new("static/index.html"));
@@ -149,4 +178,12 @@ async fn run() -> Result<(), String> {
     axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await
         .map_err(|e| format!("serve: {e}"))
+}
+
+/// Read a boolean env var. Accepts 1/true/yes/on (case-insensitive) as true.
+fn env_flag(name: &str, default: bool) -> bool {
+    match std::env::var(name) {
+        Ok(v) => matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
+        Err(_) => default,
+    }
 }

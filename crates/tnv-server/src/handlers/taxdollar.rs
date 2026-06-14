@@ -2,15 +2,20 @@ use axum::{extract::{State, Path}, http::StatusCode, Json};
 use serde_json::{json, Value};
 use sqlx::Row;
 use crate::csv_parse::parse_taxdollar_csv;
+use crate::extract::ClientIp;
 use crate::models::*;
 use crate::state::*;
 use crate::validation::validate_taxdollar;
 
 pub async fn submit_taxdollar(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     claims: Claims,
     body: String,
 ) -> Result<Json<TaxDollarReceipt>, (StatusCode, Json<Value>)> {
+    state.rate_limit(ip, "submit", RATE_SUBMIT_MAX, RATE_SUBMIT_WINDOW_SECS)
+        .await.map_err(too_many)?;
+
     let parsed = parse_taxdollar_csv(&body).map_err(bad)?;
     validate_taxdollar(&parsed, &state.valid_node_ids).map_err(bad)?;
 
@@ -130,8 +135,14 @@ fn bad(msg: String) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({"error": msg})))
 }
 fn internal(msg: String) -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": msg})))
+    tracing::error!("internal error: {msg}");
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "internal server error"})))
 }
 fn not_found(msg: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::NOT_FOUND, Json(json!({"error": msg})))
+}
+fn too_many(retry_after: u64) -> (StatusCode, Json<Value>) {
+    (StatusCode::TOO_MANY_REQUESTS, Json(json!({
+        "error": "too many requests", "retry_after_secs": retry_after
+    })))
 }

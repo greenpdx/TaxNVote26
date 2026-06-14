@@ -34,12 +34,11 @@ pub fn validate_template(
     tpl: &ParsedTemplate,
     valid_ids: &HashSet<String>,
 ) -> Result<(), String> {
-    // If we have valid IDs loaded, check every entry
-    if !valid_ids.is_empty() {
-        for entry in &tpl.entries {
-            if !valid_ids.contains(&entry.node_id) {
-                return Err(format!("unknown node_id: '{}'", entry.node_id));
-            }
+    // Check every entry against the allowlist. The set is never empty (startup
+    // fails if budauth.csv yields no node IDs), so this never fails open.
+    for entry in &tpl.entries {
+        if !valid_ids.contains(&entry.node_id) {
+            return Err(format!("unknown node_id: '{}'", entry.node_id));
         }
     }
     Ok(())
@@ -50,12 +49,10 @@ pub fn validate_taxdollar(
     td: &ParsedTaxDollar,
     valid_ids: &HashSet<String>,
 ) -> Result<(), String> {
-    // Node ID check
-    if !valid_ids.is_empty() {
-        for alloc in &td.allocations {
-            if !valid_ids.contains(&alloc.node_id) {
-                return Err(format!("unknown node_id: '{}'", alloc.node_id));
-            }
+    // Node ID check against the allowlist (never empty — see validate_template).
+    for alloc in &td.allocations {
+        if !valid_ids.contains(&alloc.node_id) {
+            return Err(format!("unknown node_id: '{}'", alloc.node_id));
         }
     }
 
