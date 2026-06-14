@@ -19,6 +19,7 @@ crates/tnv-budget-tree/data/
 
 # Data
 data/store.json
+data/*.bak
 data/*.db
 data/*.db-journal
 data/*.db-wal
