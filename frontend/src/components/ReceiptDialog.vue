@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const props = defineProps<{ open: boolean; receipt: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -7,10 +7,13 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const copied = ref(false)
 const inputEl = ref<HTMLInputElement | null>(null)
 
+// Full shareable link to the public submission view.
+const url = computed(() => `${window.location.origin}/api/taxdollar/${props.receipt}`)
+
 watch(() => props.open, (o) => { if (o) copied.value = false })
 
 async function copy() {
-  const text = props.receipt
+  const text = url.value
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text)
@@ -33,13 +36,14 @@ async function copy() {
     <div class="dialog">
       <h3 class="r-title">Submission saved ✓</h3>
       <p class="r-hint">
-        This receipt is the only way to find your submission later — copy and
-        keep it somewhere safe.
+        This link is the only way to find your submission later — copy and keep
+        it somewhere safe. Anyone with the link can view this submission.
       </p>
       <div class="r-row">
-        <input ref="inputEl" class="r-in" :value="receipt" readonly @focus="inputEl?.select()" />
+        <input ref="inputEl" class="r-in" :value="url" readonly @focus="inputEl?.select()" />
         <button class="r-copy" @click="copy">{{ copied ? 'Copied ✓' : 'Copy' }}</button>
       </div>
+      <p class="r-token">Receipt: <span class="r-mono">{{ receipt }}</span></p>
       <div class="r-actions">
         <button class="r-ok" @click="emit('close')">Done</button>
       </div>
@@ -68,6 +72,8 @@ async function copy() {
 .r-in:focus { border-color: #3b82f6; }
 .r-copy { background: #2563eb; border: 1px solid #2563eb; color: #fff; padding: 8px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .r-copy:hover { background: #1d4ed8; }
+.r-token { font-size: 11px; color: #64748b; margin-top: 8px; }
+.r-mono { font-family: ui-monospace, monospace; color: #94a3b8; }
 .r-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 .r-ok { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
 .r-ok:hover { background: #334155; }
