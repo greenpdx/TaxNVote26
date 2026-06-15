@@ -1,14 +1,26 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import QRCode from 'qrcode'
 
 const props = defineProps<{ open: boolean; receipt: string; csv?: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const copied = ref(false)
+const qr = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
 
 // Full shareable link to the public submission view (hash route).
 const url = computed(() => `${window.location.origin}/#/s/${props.receipt}`)
+
+watch(() => props.open, async (o) => {
+  if (!o) return
+  copied.value = false
+  try {
+    qr.value = await QRCode.toDataURL(url.value, { margin: 1, width: 220 })
+  } catch {
+    qr.value = ''
+  }
+}, { immediate: true })
 
 function download() {
   const blob = new Blob([props.csv || ''], { type: 'text/csv' })
@@ -20,8 +32,6 @@ function download() {
   a.remove()
   URL.revokeObjectURL(a.href)
 }
-
-watch(() => props.open, (o) => { if (o) copied.value = false })
 
 async function copy() {
   const text = url.value
@@ -50,6 +60,7 @@ async function copy() {
         Keep this link to find your submission later. Until the data is released,
         opening it requires the PIN you just set.
       </p>
+      <div v-if="qr" class="r-qr"><img :src="qr" alt="Submission QR code" /></div>
       <div class="r-row">
         <input ref="inputEl" class="r-in" :value="url" readonly @focus="inputEl?.select()" />
         <button class="r-copy" @click="copy">{{ copied ? 'Copied ✓' : 'Copy' }}</button>
@@ -76,6 +87,8 @@ async function copy() {
 }
 .r-title { font-size: 18px; color: #34d399; margin-bottom: 6px; }
 .r-hint { font-size: 13px; color: #94a3b8; line-height: 1.5; margin-bottom: 12px; }
+.r-qr { display: flex; justify-content: center; margin-bottom: 12px; }
+.r-qr img { width: 180px; height: 180px; border-radius: 8px; background: #fff; padding: 6px; }
 .r-row { display: flex; gap: 6px; }
 .r-in {
   flex: 1; min-width: 0; background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
