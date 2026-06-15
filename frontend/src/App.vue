@@ -70,7 +70,7 @@ async function submit() {
     const csv = await buildTaxDollarCsv(store.leafAllocations(), store.fiscalYear, 'default')
     const r = await submitTaxDollar(csv, session.token!)
     flash(`Submitted ✓ as ${session.name} · receipt ${r.receipt_token}${r.replaced ? ' (replaced your prior one)' : ''}`)
-    session.logout() // ephemeral session: auto-logout after submitting
+    // Stay signed in after submitting (you can change and re-submit; it upserts).
   } catch (e) {
     flash('Submit failed: ' + (e instanceof Error ? e.message : String(e)), true)
   } finally { busy.value = false }
