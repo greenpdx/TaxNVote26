@@ -24,7 +24,7 @@ test('login → submit → auto-logout resets, Results updates', async ({ page }
 
   const name = 'e2e_' + Math.random().toString(36).slice(2, 8)
   await dialog.getByPlaceholder('Name').fill(name)
-  await dialog.getByPlaceholder('4-digit number').fill('1234')
+  await dialog.getByPlaceholder('4-digit PIN').fill('1234')
   await dialog.locator('.d-login').click()
 
   // Receipt flash shown.

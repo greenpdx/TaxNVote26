@@ -15,7 +15,7 @@ test('save current as template, list it, and load it back', async ({ page }) => 
   const dialog = page.locator('.dialog')
   await expect(dialog).toBeVisible()
   await dialog.getByPlaceholder('Name').fill('tpl_' + suffix)
-  await dialog.getByPlaceholder('4-digit number').fill('8888')
+  await dialog.getByPlaceholder('4-digit PIN').fill('8888')
   await dialog.locator('.d-login').click()
   await expect(dialog).toBeHidden()
 

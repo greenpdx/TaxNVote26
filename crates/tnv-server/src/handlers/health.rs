@@ -1,5 +1,6 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde_json::{json, Value};
+use crate::models::{DEFAULT_SUBTITLE_1, DEFAULT_SUBTITLE_2};
 use crate::state::AppState;
 
 /// Liveness + readiness. Pings the database so orchestrators (and Caddy/LB
@@ -13,4 +14,13 @@ pub async fn health(State(state): State<AppState>) -> (StatusCode, Json<Value>) 
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "status": "degraded", "nodes": nodes, "db": "down" })))
     }
+}
+
+/// Public, unauthenticated runtime config the SPA needs before sign-in.
+/// Currently just the admin-editable header subtitles (with defaults).
+pub async fn public_config(State(state): State<AppState>) -> Json<Value> {
+    Json(json!({
+        "subtitle_1": state.setting_str("subtitle_1", DEFAULT_SUBTITLE_1).await,
+        "subtitle_2": state.setting_str("subtitle_2", DEFAULT_SUBTITLE_2).await,
+    }))
 }

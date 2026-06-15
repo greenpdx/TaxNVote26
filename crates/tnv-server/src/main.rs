@@ -1,3 +1,15 @@
+// The demo variant compiles the email-verification + proof-of-work scaffolding
+// (mailer, challenge store, verification codes) but never mounts the routes that
+// use it, so those items are intentionally dead there. Silence the noise rather
+// than thread `#[cfg(feature = "full")]` through every AppState field.
+#![cfg_attr(not(feature = "full"), allow(dead_code))]
+
+// Exactly one build variant must be selected — see Cargo.toml [features].
+#[cfg(all(feature = "full", feature = "demo"))]
+compile_error!("enable exactly one of `full` or `demo` (not both); demo builds use --no-default-features --features demo");
+#[cfg(not(any(feature = "full", feature = "demo")))]
+compile_error!("enable one of `full` or `demo` (use default features for `full`)");
+
 mod acl;
 mod auth;
 mod csv_parse;
@@ -74,16 +86,6 @@ async fn run() -> Result<(), String> {
     // proxy (e.g. Caddy). Otherwise the header is attacker-controlled.
     let trusted_proxy = env_flag("TRUSTED_PROXY", false);
 
-    // Demo PIN identity (/api/identify). Off by default — it is an
-    // impersonation oracle and must stay disabled on public deployments.
-    let enable_demo_identity = env_flag("ENABLE_DEMO_IDENTITY", false);
-    if enable_demo_identity {
-        tracing::warn!(
-            "ENABLE_DEMO_IDENTITY is ON: /api/identify (name + 4-digit PIN) is mounted. \
-             This allows trivial impersonation and must NOT be enabled in production."
-        );
-    }
-
     // Pool size + request limits (tunable for the deployment).
     let db_max_connections: u32 = std::env::var("DB_MAX_CONNECTIONS").ok()
         .and_then(|s| s.parse().ok()).filter(|n| *n > 0).unwrap_or(10);
@@ -137,7 +139,6 @@ async fn run() -> Result<(), String> {
         fiscal_year.clone(),
         jwt_ttl_secs,
         trusted_proxy,
-        enable_demo_identity,
         valid_node_ids,
         mailer,
     );
@@ -165,11 +166,10 @@ async fn run() -> Result<(), String> {
         });
     }
 
+    #[allow(unused_mut)] // mutated only by the variant-gated route blocks below
     let mut api = Router::new()
         .route("/health", get(handlers::health::health))
-        .route("/auth/challenge", get(handlers::auth::challenge))
-        .route("/auth/register", post(handlers::auth::register))
-        .route("/auth/verify", post(handlers::auth::verify))
+        .route("/config/public", get(handlers::health::public_config))
         .route("/auth/login", post(handlers::auth::login))
         .route("/auth/me", get(handlers::auth::me))
         .route("/aggregate", get(handlers::aggregate::aggregate))
@@ -180,7 +180,18 @@ async fn run() -> Result<(), String> {
         .route("/taxdollar/mine", get(handlers::taxdollar::my_taxdollars))
         .route("/taxdollar/{receipt_token}", get(handlers::taxdollar::get_taxdollar));
 
-    if enable_demo_identity {
+    // full build: email/password registration + email verification.
+    #[cfg(feature = "full")]
+    {
+        api = api
+            .route("/auth/challenge", get(handlers::auth::challenge))
+            .route("/auth/register", post(handlers::auth::register))
+            .route("/auth/verify", post(handlers::auth::verify));
+    }
+
+    // demo build: name + 4-digit-PIN identity (admin email login stays above).
+    #[cfg(feature = "demo")]
+    {
         api = api.route("/identify", post(handlers::identity::identify));
     }
 

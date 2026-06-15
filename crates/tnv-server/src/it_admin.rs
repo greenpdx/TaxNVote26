@@ -51,7 +51,6 @@ async fn test_state() -> AppState {
         "2027".to_string(),
         3600,
         false,
-        false,
         ids,
         Arc::new(LogMailer::new()),
     );

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { useSessionStore } from '../stores/session'
+import { IS_DEMO } from '../config'
 import * as api from '../api'
 
 const props = defineProps<{ open: boolean }>()
@@ -8,17 +9,14 @@ const emit = defineEmits<{ (e: 'close'): void; (e: 'success'): void }>()
 
 const session = useSessionStore()
 
-// Coupon that unlocks demo identity (programmable via build env).
-const DEMO_COUPON = (import.meta.env.VITE_DEMO_COUPON as string) || 'ISDC2026'
-
 type View = 'signin' | 'signup' | 'verify'
 const view = ref<View>('signin')
-const step = ref<1 | 2>(1)     // sign-up step
-const isDemo = ref(false)      // chosen by the coupon at step 1
+const step = ref<1 | 2>(1)     // full sign-up step
+const adminMode = ref(false)   // demo only: reveal email/password login for admins
 
 const email = ref('')
 const username = ref('')
-const coupon = ref('')
+const name = ref('')
 const secret = ref('')
 const secret2 = ref('')
 const showSecret = ref(false)
@@ -33,14 +31,19 @@ const powMsg = ref('')
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const err = computed(() => localErr.value || session.error)
 const busy = computed(() => session.busy || signupBusy.value)
-const couponOk = computed(() => coupon.value.trim() === DEMO_COUPON)
+// Sign-in collects a name + PIN only in the demo build, and not while an admin
+// has switched to the email/password form.
+const pinSignin = computed(() => IS_DEMO && !adminMode.value)
+// Tabs hide on the verify step and on the full build's password step.
+const showTabs = computed(() =>
+  view.value !== 'verify' && !(view.value === 'signup' && step.value === 2 && !IS_DEMO))
 
 watch(() => props.open, (o) => {
   if (o) reset()
 })
 function reset() {
-  view.value = 'signin'; step.value = 1; isDemo.value = false
-  email.value = ''; username.value = ''; coupon.value = ''
+  view.value = 'signin'; step.value = 1; adminMode.value = false
+  email.value = ''; username.value = ''; name.value = ''
   secret.value = ''; secret2.value = ''; code.value = ''
   showSecret.value = false; showSecret2.value = false
   localErr.value = null; note.value = null; powMsg.value = ''
@@ -54,40 +57,35 @@ function go(v: View) {
 }
 
 async function doSignin() {
-  // With a valid coupon, sign in as a demo identity (name + PIN) instead.
-  if (couponOk.value) {
-    if (await session.identify(email.value.trim(), secret.value.trim())) done()
+  if (pinSignin.value) {
+    if (await session.identify(name.value.trim(), secret.value.trim())) done()
   } else {
     if (await session.loginEmail(email.value.trim(), secret.value)) done()
   }
 }
 
-// Step 1 → 2: validate identity fields, decide demo vs account by the coupon.
+// Full sign-up step 1 → 2: validate username + email.
 function nextStep() {
   localErr.value = null
-  isDemo.value = couponOk.value
-  if (isDemo.value) {
-    if (username.value.trim().length < 1) { localErr.value = 'Enter a name.'; return }
-  } else {
-    if (username.value.trim().length < 3) { localErr.value = 'Username must be at least 3 characters.'; return }
-    if (!email.value.includes('@')) { localErr.value = 'Enter a valid email.'; return }
-  }
+  if (username.value.trim().length < 3) { localErr.value = 'Username must be at least 3 characters.'; return }
+  if (!email.value.includes('@')) { localErr.value = 'Enter a valid email.'; return }
   secret.value = ''; secret2.value = ''
   step.value = 2
 }
 
+// Demo sign-up: pick a name + confirm a 4-digit PIN, then find-or-create.
+async function finishDemoSignup() {
+  localErr.value = null
+  if (name.value.trim().length < 1) { localErr.value = 'Enter a name.'; return }
+  if (secret.value !== secret2.value) { localErr.value = 'PINs do not match.'; return }
+  if (!/^\d{4}$/.test(secret.value)) { localErr.value = 'PIN must be 4 digits.'; return }
+  if (await session.identify(name.value.trim(), secret.value)) done()
+}
+
+// Full sign-up: PoW + register, then email verification.
 async function finishSignup() {
   localErr.value = null
-  if (secret.value !== secret2.value) {
-    localErr.value = isDemo.value ? 'PINs do not match.' : 'Passwords do not match.'
-    return
-  }
-  if (isDemo.value) {
-    if (!/^\d{4}$/.test(secret.value)) { localErr.value = 'PIN must be 4 digits.'; return }
-    if (await session.identify(username.value.trim(), secret.value)) done()
-    return
-  }
-  // Account: PoW + register, then email verification.
+  if (secret.value !== secret2.value) { localErr.value = 'Passwords do not match.'; return }
   if (secret.value.length < 8) { localErr.value = 'Password must be at least 8 characters.'; return }
   signupBusy.value = true
   powMsg.value = 'Preparing…'
@@ -118,38 +116,73 @@ function done() { emit('success'); emit('close') }
 <template>
   <div v-if="open" class="overlay" @click.self="emit('close')">
     <div class="dialog">
-      <!-- Tabs (hidden during sign-up step 2 and the verify step) -->
-      <div v-if="view !== 'verify' && !(view === 'signup' && step === 2)" class="auth-tabs">
+      <!-- Tabs (hidden during the full build's password step and the verify step) -->
+      <div v-if="showTabs" class="auth-tabs">
         <button :class="{ on: view === 'signin' }" @click="go('signin')">Sign in</button>
         <button :class="{ on: view === 'signup' }" @click="go('signup')">Sign up</button>
       </div>
 
       <!-- Sign in -->
       <template v-if="view === 'signin'">
-        <p class="d-hint">Sign in with your email and password.</p>
-        <input class="d-in" v-model="email" :type="couponOk ? 'text' : 'email'" :placeholder="couponOk ? 'Name' : 'Email'" autocomplete="username" @keyup.enter="doSignin" />
-        <div class="pw-wrap">
-          <input class="d-in" v-model="secret" :type="showSecret ? 'text' : 'password'"
-                 :inputmode="couponOk ? 'numeric' : 'text'" :maxlength="couponOk ? 4 : 128"
-                 :placeholder="couponOk ? '4-digit PIN' : 'Password'" autocomplete="current-password" @keyup.enter="doSignin" />
-          <button class="eye" type="button" @click="showSecret = !showSecret" :aria-label="showSecret ? 'Hide' : 'Show'">{{ showSecret ? '🙈' : '👁' }}</button>
-        </div>
-        <input class="d-in" v-model="coupon" placeholder="Optional coupon" maxlength="32" @keyup.enter="doSignin" />
-        <div v-if="couponOk" class="d-note">Demo identity sign-in — name + 4-digit PIN.</div>
+        <!-- Demo build: name + 4-digit PIN -->
+        <template v-if="pinSignin">
+          <p class="d-hint">Sign in with your name and 4-digit PIN.</p>
+          <input class="d-in" v-model="name" type="text" placeholder="Name" autocomplete="username" @keyup.enter="doSignin" />
+          <div class="pw-wrap">
+            <input class="d-in" v-model="secret" :type="showSecret ? 'text' : 'password'"
+                   inputmode="numeric" :maxlength="4" placeholder="4-digit PIN" autocomplete="current-password" @keyup.enter="doSignin" />
+            <button class="eye" type="button" @click="showSecret = !showSecret" :aria-label="showSecret ? 'Hide' : 'Show'">{{ showSecret ? '🙈' : '👁' }}</button>
+          </div>
+        </template>
+        <!-- Full build, or demo admin: email + password -->
+        <template v-else>
+          <p class="d-hint">Sign in with your email and password.</p>
+          <input class="d-in" v-model="email" type="email" placeholder="Email" autocomplete="username" @keyup.enter="doSignin" />
+          <div class="pw-wrap">
+            <input class="d-in" v-model="secret" :type="showSecret ? 'text' : 'password'"
+                   :maxlength="128" placeholder="Password" autocomplete="current-password" @keyup.enter="doSignin" />
+            <button class="eye" type="button" @click="showSecret = !showSecret" :aria-label="showSecret ? 'Hide' : 'Show'">{{ showSecret ? '🙈' : '👁' }}</button>
+          </div>
+        </template>
         <div v-if="err" class="d-err">{{ err }}</div>
         <div class="d-actions">
           <button class="d-cancel" @click="emit('close')">Cancel</button>
           <button class="d-login" :disabled="busy" @click="doSignin">{{ busy ? '…' : 'Sign in' }}</button>
         </div>
+        <!-- Demo build only: let admins switch to the email/password form. -->
+        <div v-if="IS_DEMO" class="d-toggle">
+          <a v-if="!adminMode" href="#" @click.prevent="adminMode = true; session.error = null">Admin sign-in</a>
+          <a v-else href="#" @click.prevent="adminMode = false; session.error = null">← Back to PIN sign-in</a>
+        </div>
       </template>
 
-      <!-- Sign up · step 1: coupon + username + email -->
+      <!-- Demo build sign-up: name + PIN (find-or-create) -->
+      <template v-else-if="view === 'signup' && IS_DEMO">
+        <p class="d-hint">Pick a name and a 4-digit PIN. Reuse them later to find your data.</p>
+        <input class="d-in" v-model="name" type="text" placeholder="Name" maxlength="64" autocomplete="username" />
+        <div class="pw-wrap">
+          <input class="d-in" v-model="secret" :type="showSecret ? 'text' : 'password'"
+                 inputmode="numeric" :maxlength="4" placeholder="4-digit PIN" autocomplete="new-password" />
+          <button class="eye" type="button" @click="showSecret = !showSecret">{{ showSecret ? '🙈' : '👁' }}</button>
+        </div>
+        <div class="pw-wrap">
+          <input class="d-in" v-model="secret2" :type="showSecret2 ? 'text' : 'password'"
+                 inputmode="numeric" :maxlength="4" placeholder="Confirm PIN" autocomplete="new-password"
+                 @keyup.enter="finishDemoSignup" />
+          <button class="eye" type="button" @click="showSecret2 = !showSecret2">{{ showSecret2 ? '🙈' : '👁' }}</button>
+        </div>
+        <div v-if="err" class="d-err">{{ err }}</div>
+        <div class="d-actions">
+          <button class="d-cancel" @click="emit('close')">Cancel</button>
+          <button class="d-login" :disabled="busy" @click="finishDemoSignup">{{ busy ? '…' : 'Continue' }}</button>
+        </div>
+      </template>
+
+      <!-- Full build sign-up · step 1: username + email -->
       <template v-else-if="view === 'signup' && step === 1">
-        <p class="d-hint">Create an account. Have a coupon? Enter it to use a demo identity.</p>
-        <input class="d-in" v-model="coupon" placeholder="Optional coupon" maxlength="32" @keyup.enter="nextStep" />
-        <div v-if="couponOk" class="d-note">Demo identity unlocked — no email needed.</div>
-        <input class="d-in" v-model="username" :placeholder="couponOk ? 'Name' : 'Username'" maxlength="64" autocomplete="username" @keyup.enter="nextStep" />
-        <input class="d-in" v-model="email" type="email" :placeholder="couponOk ? 'Email (optional)' : 'Email'" maxlength="254" autocomplete="email" @keyup.enter="nextStep" />
+        <p class="d-hint">Create an account.</p>
+        <input class="d-in" v-model="username" placeholder="Username" maxlength="64" autocomplete="username" @keyup.enter="nextStep" />
+        <input class="d-in" v-model="email" type="email" placeholder="Email" maxlength="254" autocomplete="email" @keyup.enter="nextStep" />
         <div v-if="err" class="d-err">{{ err }}</div>
         <div class="d-actions">
           <button class="d-cancel" @click="emit('close')">Cancel</button>
@@ -157,20 +190,18 @@ function done() { emit('success'); emit('close') }
         </div>
       </template>
 
-      <!-- Sign up · step 2: two secrets with eye toggles -->
+      <!-- Full build sign-up · step 2: password + confirm -->
       <template v-else-if="view === 'signup' && step === 2">
-        <h3 class="d-title">{{ isDemo ? 'Choose a 4-digit PIN' : 'Choose a password' }}</h3>
-        <p class="d-hint">{{ isDemo ? 'Reuse your name + PIN later to find your data.' : 'At least 8 characters.' }}</p>
+        <h3 class="d-title">Choose a password</h3>
+        <p class="d-hint">At least 8 characters.</p>
         <div class="pw-wrap">
           <input class="d-in" v-model="secret" :type="showSecret ? 'text' : 'password'"
-                 :inputmode="isDemo ? 'numeric' : 'text'" :maxlength="isDemo ? 4 : 128"
-                 :placeholder="isDemo ? '4-digit PIN' : 'Password'" autocomplete="new-password" />
+                 :maxlength="128" placeholder="Password" autocomplete="new-password" />
           <button class="eye" type="button" @click="showSecret = !showSecret">{{ showSecret ? '🙈' : '👁' }}</button>
         </div>
         <div class="pw-wrap">
           <input class="d-in" v-model="secret2" :type="showSecret2 ? 'text' : 'password'"
-                 :inputmode="isDemo ? 'numeric' : 'text'" :maxlength="isDemo ? 4 : 128"
-                 :placeholder="isDemo ? 'Confirm PIN' : 'Confirm password'" autocomplete="new-password"
+                 :maxlength="128" placeholder="Confirm password" autocomplete="new-password"
                  @keyup.enter="finishSignup" />
           <button class="eye" type="button" @click="showSecret2 = !showSecret2">{{ showSecret2 ? '🙈' : '👁' }}</button>
         </div>
@@ -179,12 +210,12 @@ function done() { emit('success'); emit('close') }
         <div class="d-actions">
           <button class="d-cancel" @click="step = 1">Back</button>
           <button class="d-login" :disabled="busy" @click="finishSignup">
-            {{ signupBusy ? '…' : (isDemo ? 'Continue' : 'Create account') }}
+            {{ signupBusy ? '…' : 'Create account' }}
           </button>
         </div>
       </template>
 
-      <!-- Verify code (account sign-up) -->
+      <!-- Verify code (full build account sign-up) -->
       <template v-else>
         <h3 class="d-title">Confirm your email</h3>
         <p class="d-hint">{{ note || 'Enter the 6-digit code we emailed you.' }}</p>
@@ -216,6 +247,9 @@ function done() { emit('success'); emit('close') }
 .d-title { font-size: 18px; color: #f59e0b; margin-bottom: 4px; }
 .d-hint { font-size: 12px; color: #64748b; margin-bottom: 12px; }
 .d-note { font-size: 12px; color: #34d399; margin: -2px 0 8px; }
+.d-toggle { margin-top: 10px; text-align: center; }
+.d-toggle a { font-size: 12px; color: #64748b; text-decoration: none; }
+.d-toggle a:hover { color: #94a3b8; text-decoration: underline; }
 .d-in {
   width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
   padding: 10px 12px; border-radius: 8px; font-size: 15px; outline: none; margin-bottom: 8px;

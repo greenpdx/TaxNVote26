@@ -1,0 +1,47 @@
+# TNV demo container — conference build (name + 4-digit PIN identity).
+#
+# Same source as the permanent site, built with VARIANT=demo so the SPA shows
+# the name+PIN sign-in and the server mounts /api/identify instead of email
+# registration. Admin email login still works (via the "Admin sign-in" toggle).
+#
+# Bring this up only for the duration of a conference; the permanent `full`
+# build (docker-compose.yml) stays up independently.
+#
+#   cp .env.docker.demo.example .env.docker.demo   # then edit the values
+#   docker compose -f docker-compose.demo.yml up -d --build
+
+services:
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # MUST match FISCAL_YEAR in .env.docker.demo (the SPA bakes it in).
+        FISCAL_YEAR: "2027"
+        VARIANT: "demo"
+    image: tnv-demo:latest
+    container_name: tnv-demo
+    env_file: .env.docker.demo
+    environment:
+      BIND_ADDR: "0.0.0.0:3000"
+      STATIC_DIR: "static"
+      DATA_DIR: "data"
+      # The reverse proxy terminates TLS and sets X-Forwarded-For:
+      TRUSTED_PROXY: "true"
+    # Internal only — the reverse proxy reaches it as http://demo:3000.
+    expose:
+      - "3000"
+    # For local testing WITHOUT a proxy, publish to localhost only (uncomment):
+    # ports:
+    #   - "127.0.0.1:3001:3000"
+    restart: unless-stopped
+    networks:
+      - web
+
+networks:
+  web:
+    name: tnv-demo
+    # If the proxy/TLS session owns the network, make it external and remove the
+    # `name`/driver here so both compose files share it:
+    #   external: true
+    driver: bridge

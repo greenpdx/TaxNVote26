@@ -3,6 +3,18 @@ name = "tnv-server"
 version = "0.1.0"
 edition = "2024"
 
+# Two mutually-exclusive build variants selected at compile time. Exactly one
+# must be active (a compile_error! in main.rs enforces this):
+#   full — email/password registration + login (the permanent public site)
+#   demo — name + PIN identity for conference use (admin email login still
+#          available, but no public self-registration)
+# Default is `full`; build the demo with:
+#   cargo build -p tnv-server --no-default-features --features demo
+[features]
+default = ["full"]
+full = []
+demo = []
+
 [dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
