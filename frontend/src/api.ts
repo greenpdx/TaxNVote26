@@ -17,6 +17,7 @@ export interface TaxDollarReceipt {
   fiscal_year: string
   created_at: string
   replaced: boolean
+  access_code: string
 }
 
 export interface TaxDollarSummary {
@@ -168,22 +169,24 @@ export async function createTemplate(csv: string, token: string): Promise<{ rece
 }
 
 // ─── Tax Dollars ───────────────────────────────────────────────
-export async function submitTaxDollar(csv: string, token: string, pin = ''): Promise<TaxDollarReceipt> {
-  const headers: Record<string, string> = { 'content-type': 'text/plain', ...authHeaders(token) }
-  if (pin) headers['x-access-pin'] = pin
-  const res = await fetch(`${BASE}/taxdollar`, { method: 'POST', headers, body: csv })
+export async function submitTaxDollar(csv: string, token: string): Promise<TaxDollarReceipt> {
+  const res = await fetch(`${BASE}/taxdollar`, {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain', ...authHeaders(token) },
+    body: csv,
+  })
   if (!res.ok) return asError(res)
   return res.json()
 }
 
-/** Fetch a submission via its public link. Throws an error with `pinRequired`
- *  set when an access PIN is needed (HTTP 401). */
-export async function fetchSubmission(receiptToken: string, pin = ''): Promise<string> {
-  const qs = pin ? `?pin=${encodeURIComponent(pin)}` : ''
+/** Fetch a submission via its public link. Throws an error with `codeRequired`
+ *  set when the access code is needed (HTTP 401). */
+export async function fetchSubmission(receiptToken: string, code = ''): Promise<string> {
+  const qs = code ? `?code=${encodeURIComponent(code)}` : ''
   const res = await fetch(`${BASE}/taxdollar/${encodeURIComponent(receiptToken)}${qs}`)
   if (res.status === 401) {
-    const e = new Error('pin required') as Error & { pinRequired?: boolean }
-    e.pinRequired = true
+    const e = new Error('access code required') as Error & { codeRequired?: boolean }
+    e.codeRequired = true
     throw e
   }
   if (!res.ok) return asError(res)

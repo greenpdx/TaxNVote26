@@ -1,8 +1,8 @@
-use axum::{extract::{State, Path, Query}, http::{StatusCode, HeaderMap}, Json};
+use axum::{extract::{State, Path, Query}, http::StatusCode, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
-use crate::auth::{hash_secret, ct_eq};
+use crate::auth::{hash_secret, ct_eq, generate_access_code};
 use crate::csv_parse::parse_taxdollar_csv;
 use crate::extract::ClientIp;
 use crate::models::*;
@@ -11,24 +11,12 @@ use crate::validation::validate_taxdollar;
 
 #[derive(Debug, Deserialize)]
 pub struct ViewQuery {
-    pub pin: Option<String>,
-}
-
-/// Hash a 4-digit access PIN against its submission's (unguessable) receipt
-/// token as salt. Returns None unless the PIN is exactly 4 digits.
-fn access_pin_hash(receipt_token: &str, pin: &str) -> Option<String> {
-    let pin = pin.trim();
-    if pin.len() == 4 && pin.chars().all(|c| c.is_ascii_digit()) {
-        Some(hash_secret(receipt_token, pin))
-    } else {
-        None
-    }
+    pub code: Option<String>,
 }
 
 pub async fn submit_taxdollar(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
-    headers: HeaderMap,
     claims: Claims,
     body: String,
 ) -> Result<Json<TaxDollarReceipt>, (StatusCode, Json<Value>)> {
@@ -63,10 +51,10 @@ pub async fn submit_taxdollar(
     let receipt_token = state.generate_td_receipt();
     let now = chrono::Utc::now().to_rfc3339();
 
-    // Optional access PIN (X-Access-Pin: NNNN) gating the public link before release.
-    let pin_hash: Option<String> = headers.get("x-access-pin")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|p| access_pin_hash(&receipt_token, p));
+    // System-generated access code that gates the public link before release.
+    // Returned to the taxpayer on the receipt; only its hash is stored.
+    let access_code = generate_access_code();
+    let pin_hash: Option<String> = Some(hash_secret(&receipt_token, &access_code));
 
     let mut tx = state.db.begin().await.map_err(|e| internal(e.to_string()))?;
 
@@ -119,7 +107,7 @@ pub async fn submit_taxdollar(
 
     Ok(Json(TaxDollarReceipt {
         receipt_token, fiscal_year: parsed.fiscal_year,
-        created_at: now, replaced,
+        created_at: now, replaced, access_code,
     }))
 }
 
@@ -150,15 +138,18 @@ pub async fn get_taxdollar(
         return Ok(csv);
     }
 
-    // Before release: gate on the per-submission access PIN.
+    // Before release: gate on the submission's access code.
     let Some(hash) = pin_hash else {
         return Err((StatusCode::FORBIDDEN,
             Json(json!({"error": "this submission is private until the data is released"}))));
     };
-    match q.pin {
-        None => Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "pin required", "pin_required": true})))),
-        Some(pin) if ct_eq(hash_secret(&receipt_token, pin.trim()).as_bytes(), hash.as_bytes()) => Ok(csv),
-        Some(_) => Err((StatusCode::FORBIDDEN, Json(json!({"error": "invalid pin"})))),
+    match q.code {
+        None => Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "access code required", "code_required": true})))),
+        Some(code) if ct_eq(
+            hash_secret(&receipt_token, code.trim().to_uppercase().as_str()).as_bytes(),
+            hash.as_bytes(),
+        ) => Ok(csv),
+        Some(_) => Err((StatusCode::FORBIDDEN, Json(json!({"error": "invalid access code"})))),
     }
 }
 

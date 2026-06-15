@@ -64,6 +64,16 @@ pub fn hash_secret(name: &str, pin: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Generate a short, human-friendly access code for a submission link
+/// (uppercase, unambiguous base32 — no 0/1/I/O). 6 chars ≈ 30 bits, which the
+/// view endpoint's rate limit keeps brute-proof on top of the unguessable token.
+pub fn generate_access_code() -> String {
+    use rand::Rng;
+    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut rng = rand::thread_rng();
+    (0..6).map(|_| ALPHABET[rng.r#gen_range(0..ALPHABET.len())] as char).collect()
+}
+
 /// Generate a random token id (jti) for revocation tracking.
 pub fn generate_jti() -> String {
     use rand::Rng;

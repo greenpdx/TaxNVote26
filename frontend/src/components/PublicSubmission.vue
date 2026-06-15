@@ -11,8 +11,8 @@ const budget = useBudgetStore()
 const rollup = ref<RollupNode[]>([])
 const fiscalYear = ref('')
 const loading = ref(true)
-const needPin = ref(false)
-const pinInput = ref('')
+const needCode = ref(false)
+const codeInput = ref('')
 const err = ref<string | null>(null)
 
 const nameMap = computed(() => {
@@ -22,25 +22,25 @@ const nameMap = computed(() => {
 })
 function nameOf(id: string): string { return nameMap.value.get(id) || id }
 
-async function load(pin = '') {
+async function load(code = '') {
   err.value = null
   loading.value = true
   try {
-    const csv = await fetchSubmission(props.token, pin)
-    needPin.value = false
+    const csv = await fetchSubmission(props.token, code)
+    needCode.value = false
     fiscalYear.value = (csv.match(/^#fiscal_year,(.+)$/m)?.[1] || '').trim()
     rollup.value = buildRollup(parseTemplateEntries(csv).map(e => ({ node_id: e.id, amount: e.value })))
   } catch (e) {
-    if ((e as { pinRequired?: boolean })?.pinRequired) needPin.value = true
+    if ((e as { codeRequired?: boolean })?.codeRequired) needCode.value = true
     else err.value = e instanceof Error ? e.message : String(e)
   } finally {
     loading.value = false
   }
 }
 
-function submitPin() {
-  if (!/^\d{4}$/.test(pinInput.value)) { err.value = 'Enter a 4-digit PIN.'; return }
-  load(pinInput.value)
+function submitCode() {
+  if (codeInput.value.trim().length < 4) { err.value = 'Enter the access code.'; return }
+  load(codeInput.value.trim())
 }
 
 onMounted(() => load())
@@ -56,13 +56,13 @@ onMounted(() => load())
     <main class="pub-main">
       <div v-if="loading" class="pub-msg">Loading submission…</div>
 
-      <!-- PIN gate -->
-      <div v-else-if="needPin" class="pub-pin">
-        <p class="pub-msg">This submission is private until the data is released. Enter the access PIN to view it.</p>
+      <!-- Access-code gate -->
+      <div v-else-if="needCode" class="pub-pin">
+        <p class="pub-msg">This submission is private until the data is released. Enter the access code from the receipt to view it.</p>
         <div class="pin-row">
-          <input v-model="pinInput" type="password" inputmode="numeric" maxlength="4"
-                 placeholder="4-digit PIN" @keyup.enter="submitPin" />
-          <button @click="submitPin">View</button>
+          <input v-model="codeInput" maxlength="12" autocapitalize="characters" spellcheck="false"
+                 placeholder="Access code" @keyup.enter="submitCode" />
+          <button @click="submitCode">View</button>
         </div>
         <div v-if="err" class="pub-msg err">{{ err }}</div>
       </div>

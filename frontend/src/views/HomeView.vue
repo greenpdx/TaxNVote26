@@ -9,7 +9,6 @@ import ResultsView from '../components/ResultsView.vue'
 import AdminView from '../components/AdminView.vue'
 import HelpDialog from '../components/HelpDialog.vue'
 import ReceiptDialog from '../components/ReceiptDialog.vue'
-import PinDialog from '../components/PinDialog.vue'
 import {
   buildTaxDollarCsv, submitTaxDollar, buildTemplateCsv, createTemplate,
   myTaxDollars, parseTemplateEntries,
@@ -26,9 +25,9 @@ const busy = ref(false)
 
 const showLogin = ref(false)
 const showHelp = ref(false)
-const showSubmitPin = ref(false)
 const showReceipt = ref(false)
 const submittedReceipt = ref<string | null>(null)
+const submittedCode = ref('')
 const submittedCsv = ref('')
 const afterLogin = ref<null | (() => void)>(null)
 function requireLogin(fn: () => void) {
@@ -66,18 +65,15 @@ function toggleMode() { store.mode = store.mode === 'simple' ? 'full' : 'simple'
 function toggleBarScale() { store.barScale = store.barScale === 'linear' ? 'log' : 'linear' }
 function flash(text: string, isErr = false) { msg.value = text; msgErr.value = isErr }
 
-function askSubmit() {
+async function submit() {
   if (!session.isIdentified) { flash('Sign in first.', true); return }
-  showSubmitPin.value = true
-}
-
-async function doSubmit(pin: string) {
   busy.value = true
   try {
     const csv = await buildTaxDollarCsv(store.leafAllocations(), store.fiscalYear, 'default')
-    const r = await submitTaxDollar(csv, session.token!, pin)
+    const r = await submitTaxDollar(csv, session.token!)
     flash(`Submitted ✓${r.replaced ? ' (replaced your prior submission)' : ''}`)
     submittedReceipt.value = r.receipt_token
+    submittedCode.value = r.access_code
     submittedCsv.value = csv
     showReceipt.value = true
     // Stay signed in after submitting (you can change and re-submit; it upserts).
@@ -85,7 +81,6 @@ async function doSubmit(pin: string) {
     flash('Submit failed: ' + (e instanceof Error ? e.message : String(e)), true)
   } finally {
     busy.value = false
-    showSubmitPin.value = false
   }
 }
 
@@ -128,8 +123,7 @@ async function loadMine() {
   <div class="app">
     <AuthDialog :open="showLogin" @close="showLogin = false" @success="onLoginSuccess" />
     <HelpDialog :open="showHelp" @close="showHelp = false" />
-    <PinDialog :open="showSubmitPin" :busy="busy" @submit="doSubmit" @close="showSubmitPin = false" />
-    <ReceiptDialog :open="showReceipt" :receipt="submittedReceipt || ''" :csv="submittedCsv" @close="showReceipt = false" />
+    <ReceiptDialog :open="showReceipt" :receipt="submittedReceipt || ''" :code="submittedCode" :csv="submittedCsv" @close="showReceipt = false" />
     <header class="header">
       <div class="header-top">
         <div class="title-group">
@@ -171,7 +165,7 @@ async function loadMine() {
       </div>
 
       <div v-if="session.isIdentified" class="actbar">
-        <button class="primary" :disabled="busy" @click="askSubmit">Submit my Tax Dollar</button>
+        <button class="primary" :disabled="busy" @click="submit">Submit my Tax Dollar</button>
         <button class="ghost" :disabled="busy" @click="toggleSave">Save as template</button>
         <button class="ghost" :disabled="busy" @click="loadMine">View my submission</button>
       </div>

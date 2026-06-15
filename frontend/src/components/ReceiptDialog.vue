@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import QRCode from 'qrcode'
 
-const props = defineProps<{ open: boolean; receipt: string; csv?: string }>()
+const props = defineProps<{ open: boolean; receipt: string; code?: string; csv?: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const copied = ref(false)
@@ -57,9 +57,10 @@ async function copy() {
     <div class="dialog">
       <h3 class="r-title">Submission saved ✓</h3>
       <p class="r-hint">
-        Keep this link to find your submission later. Until the data is released,
-        opening it requires the PIN you just set.
+        Keep this link <b>and</b> the access code. Until the data is released,
+        opening the link requires the code below.
       </p>
+      <div v-if="code" class="r-code">Access code <span class="code">{{ code }}</span></div>
       <div v-if="qr" class="r-qr"><img :src="qr" alt="Submission QR code" /></div>
       <div class="r-row">
         <input ref="inputEl" class="r-in" :value="url" readonly @focus="inputEl?.select()" />
@@ -87,6 +88,8 @@ async function copy() {
 }
 .r-title { font-size: 18px; color: #34d399; margin-bottom: 6px; }
 .r-hint { font-size: 13px; color: #94a3b8; line-height: 1.5; margin-bottom: 12px; }
+.r-code { text-align: center; margin-bottom: 12px; color: #94a3b8; font-size: 13px; }
+.r-code .code { display: inline-block; margin-left: 6px; font-family: ui-monospace, monospace; font-size: 20px; letter-spacing: 3px; color: #f59e0b; font-weight: 700; }
 .r-qr { display: flex; justify-content: center; margin-bottom: 12px; }
 .r-qr img { width: 180px; height: 180px; border-radius: 8px; background: #fff; padding: 6px; }
 .r-row { display: flex; gap: 6px; }

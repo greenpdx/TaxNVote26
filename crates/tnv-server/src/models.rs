@@ -168,6 +168,8 @@ pub struct TaxDollarReceipt {
     pub fiscal_year: String,
     pub created_at: String,
     pub replaced: bool,
+    /// System-generated access code that gates the public link before release.
+    pub access_code: String,
 }
 
 #[derive(Debug, Serialize)]
