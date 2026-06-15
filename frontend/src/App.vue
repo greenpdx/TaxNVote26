@@ -7,6 +7,7 @@ import AuthDialog from './components/AuthDialog.vue'
 import TemplatesView from './components/TemplatesView.vue'
 import ResultsView from './components/ResultsView.vue'
 import AdminView from './components/AdminView.vue'
+import HelpDialog from './components/HelpDialog.vue'
 import {
   buildTaxDollarCsv, submitTaxDollar, buildTemplateCsv, createTemplate,
   myTaxDollars, getTaxDollarCsv, parseTemplateEntries,
@@ -23,6 +24,7 @@ const busy = ref(false)
 
 // Login is modal + ephemeral: log in to perform one action, then auto-logout.
 const showLogin = ref(false)
+const showHelp = ref(false)
 const afterLogin = ref<null | (() => void)>(null)
 function requireLogin(fn: () => void) {
   if (session.isIdentified) fn()
@@ -116,6 +118,7 @@ async function loadMine() {
 <template>
   <div class="app">
     <AuthDialog :open="showLogin" @close="showLogin = false" @success="onLoginSuccess" />
+    <HelpDialog :open="showHelp" @close="showHelp = false" />
     <header class="header">
       <div class="header-top">
         <div class="title-group">
@@ -152,6 +155,7 @@ async function loadMine() {
           <button class="abtn" @click="toggleBarScale">📊 {{ store.barScale === 'linear' ? 'Linear' : 'Log' }}</button>
           <button class="abtn" @click="toggleMode">{{ store.mode === 'simple' ? '◈ Full' : '◇ Simple' }}</button>
           <button class="abtn" @click="store.resetAll()">↺ Reset</button>
+          <button class="abtn" @click="showHelp = true" title="How to use">❓ Help</button>
         </div>
       </div>
 
