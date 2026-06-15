@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { getTaxDollarCsv } from '../api'
 
 const props = defineProps<{ open: boolean; receipt: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -7,8 +8,22 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const copied = ref(false)
 const inputEl = ref<HTMLInputElement | null>(null)
 
-// Full shareable link to the public submission view.
-const url = computed(() => `${window.location.origin}/api/taxdollar/${props.receipt}`)
+// Full shareable link to the public submission view (hash route).
+const url = computed(() => `${window.location.origin}/#/s/${props.receipt}`)
+
+async function download() {
+  try {
+    const csv = await getTaxDollarCsv(props.receipt)
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `tax-dollar-${props.receipt}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(a.href)
+  } catch { /* network error — the link still works */ }
+}
 
 watch(() => props.open, (o) => { if (o) copied.value = false })
 
@@ -45,6 +60,7 @@ async function copy() {
       </div>
       <p class="r-token">Receipt: <span class="r-mono">{{ receipt }}</span></p>
       <div class="r-actions">
+        <button class="r-dl" @click="download">⬇ Download CSV</button>
         <button class="r-ok" @click="emit('close')">Done</button>
       </div>
     </div>
@@ -74,7 +90,9 @@ async function copy() {
 .r-copy:hover { background: #1d4ed8; }
 .r-token { font-size: 11px; color: #64748b; margin-top: 8px; }
 .r-mono { font-family: ui-monospace, monospace; color: #94a3b8; }
-.r-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.r-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.r-dl { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; padding: 8px 14px; border-radius: 8px; cursor: pointer; }
+.r-dl:hover { background: #334155; color: #e2e8f0; }
 .r-ok { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
 .r-ok:hover { background: #334155; }
 </style>
