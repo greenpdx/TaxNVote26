@@ -31,6 +31,12 @@ data/*.db-shm
 frontend/.env
 .env.docker
 
+# Prebuilt docker package artifacts (large; rebuilt from source / shipped as a tarball)
+docker-pkg/tnv-server
+docker-pkg/static/
+docker-pkg/data/
+*.tar.gz
+
 # IDE
 .vscode/
 .idea/

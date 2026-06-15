@@ -1,0 +1,39 @@
+# TNV website — prebuilt runtime container.
+#
+# The image is assembled from prebuilt artifacts (no compilation). TLS, the
+# reverse proxy, and the shared docker network are handled SEPARATELY; this runs
+# the app and exposes it internally as app:3000 for that proxy. See README.md.
+#
+#   cp .env.docker.example .env.docker   # edit the values
+#   docker compose up -d --build         # "build" only copies files
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tnv-web:latest
+    container_name: tnv-web
+    env_file: .env.docker
+    environment:
+      BIND_ADDR: "0.0.0.0:3000"
+      STATIC_DIR: "static"
+      DATA_DIR: "data"
+      # A reverse proxy terminates TLS and sets X-Forwarded-For:
+      TRUSTED_PROXY: "true"
+    expose:
+      - "3000"
+    # For local testing WITHOUT a proxy, publish to localhost only (uncomment):
+    # ports:
+    #   - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    networks:
+      - web
+
+networks:
+  web:
+    name: tnv-web
+    # If the proxy/TLS session owns the network, make it external and drop
+    # name/driver so both compose files share it:
+    #   external: true
+    driver: bridge
