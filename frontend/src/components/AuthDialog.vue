@@ -54,7 +54,12 @@ function go(v: View) {
 }
 
 async function doSignin() {
-  if (await session.loginEmail(email.value.trim(), secret.value)) done()
+  // With a valid coupon, sign in as a demo identity (name + PIN) instead.
+  if (couponOk.value) {
+    if (await session.identify(email.value.trim(), secret.value.trim())) done()
+  } else {
+    if (await session.loginEmail(email.value.trim(), secret.value)) done()
+  }
 }
 
 // Step 1 → 2: validate identity fields, decide demo vs account by the coupon.
@@ -122,11 +127,15 @@ function done() { emit('success'); emit('close') }
       <!-- Sign in -->
       <template v-if="view === 'signin'">
         <p class="d-hint">Sign in with your email and password.</p>
-        <input class="d-in" v-model="email" type="email" placeholder="Email" autocomplete="username" @keyup.enter="doSignin" />
+        <input class="d-in" v-model="email" :type="couponOk ? 'text' : 'email'" :placeholder="couponOk ? 'Name' : 'Email'" autocomplete="username" @keyup.enter="doSignin" />
         <div class="pw-wrap">
-          <input class="d-in" v-model="secret" :type="showSecret ? 'text' : 'password'" placeholder="Password" autocomplete="current-password" @keyup.enter="doSignin" />
+          <input class="d-in" v-model="secret" :type="showSecret ? 'text' : 'password'"
+                 :inputmode="couponOk ? 'numeric' : 'text'" :maxlength="couponOk ? 4 : 128"
+                 :placeholder="couponOk ? '4-digit PIN' : 'Password'" autocomplete="current-password" @keyup.enter="doSignin" />
           <button class="eye" type="button" @click="showSecret = !showSecret" :aria-label="showSecret ? 'Hide' : 'Show'">{{ showSecret ? '🙈' : '👁' }}</button>
         </div>
+        <input class="d-in" v-model="coupon" placeholder="Optional coupon" maxlength="32" @keyup.enter="doSignin" />
+        <div v-if="couponOk" class="d-note">Demo identity sign-in — name + 4-digit PIN.</div>
         <div v-if="err" class="d-err">{{ err }}</div>
         <div class="d-actions">
           <button class="d-cancel" @click="emit('close')">Cancel</button>

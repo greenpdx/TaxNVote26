@@ -8,6 +8,7 @@ import TemplatesView from './components/TemplatesView.vue'
 import ResultsView from './components/ResultsView.vue'
 import AdminView from './components/AdminView.vue'
 import HelpDialog from './components/HelpDialog.vue'
+import ReceiptDialog from './components/ReceiptDialog.vue'
 import {
   buildTaxDollarCsv, submitTaxDollar, buildTemplateCsv, createTemplate,
   myTaxDollars, getTaxDollarCsv, parseTemplateEntries,
@@ -25,6 +26,8 @@ const busy = ref(false)
 // Login is modal + ephemeral: log in to perform one action, then auto-logout.
 const showLogin = ref(false)
 const showHelp = ref(false)
+const showReceipt = ref(false)
+const submittedReceipt = ref<string | null>(null)
 const afterLogin = ref<null | (() => void)>(null)
 function requireLogin(fn: () => void) {
   if (session.isIdentified) fn()
@@ -71,7 +74,9 @@ async function submit() {
   try {
     const csv = await buildTaxDollarCsv(store.leafAllocations(), store.fiscalYear, 'default')
     const r = await submitTaxDollar(csv, session.token!)
-    flash(`Submitted ✓ as ${session.name} · receipt ${r.receipt_token}${r.replaced ? ' (replaced your prior one)' : ''}`)
+    flash(`Submitted ✓${r.replaced ? ' (replaced your prior submission)' : ''}`)
+    submittedReceipt.value = r.receipt_token
+    showReceipt.value = true
     // Stay signed in after submitting (you can change and re-submit; it upserts).
   } catch (e) {
     flash('Submit failed: ' + (e instanceof Error ? e.message : String(e)), true)
@@ -119,6 +124,7 @@ async function loadMine() {
   <div class="app">
     <AuthDialog :open="showLogin" @close="showLogin = false" @success="onLoginSuccess" />
     <HelpDialog :open="showHelp" @close="showHelp = false" />
+    <ReceiptDialog :open="showReceipt" :receipt="submittedReceipt || ''" @close="showReceipt = false" />
     <header class="header">
       <div class="header-top">
         <div class="title-group">
