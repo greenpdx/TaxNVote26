@@ -277,7 +277,38 @@ async fn run_admin_cli(state: &AppState, args: &[String]) -> Result<(), String> 
             println!("Promoted {email} to admin (tier {}).", models::ADMIN_TIER);
             Ok(())
         }
-        other => Err(format!("unknown admin command: {other:?} (try: promote <email>)")),
+        // Create an admin account directly (bypasses PoW + email verification).
+        // Bootstraps the first admin when no SMTP / registration UI is available.
+        Some("create") => {
+            let email = args.get(3)
+                .ok_or("usage: tnv-server admin create <email> <username> <password>".to_string())?;
+            let username = args.get(4)
+                .ok_or("usage: tnv-server admin create <email> <username> <password>".to_string())?;
+            let password = args.get(5)
+                .ok_or("usage: tnv-server admin create <email> <username> <password>".to_string())?;
+            if username.len() < models::USERNAME_MIN || username.len() > models::USERNAME_MAX {
+                return Err(format!("username must be {}-{} chars", models::USERNAME_MIN, models::USERNAME_MAX));
+            }
+            if password.len() < models::PASSWORD_MIN {
+                return Err(format!("password must be at least {} chars", models::PASSWORD_MIN));
+            }
+            let email_h = crate::auth::hash_email(email);
+            let pw_h = crate::auth::hash_password(password)?;
+            sqlx::query(&state.q(
+                "INSERT INTO accounts (username, email_hash, password_hash, tier) VALUES (?, ?, ?, ?)"
+            ))
+                .bind(username)
+                .bind(&email_h)
+                .bind(&pw_h)
+                .bind(models::ADMIN_TIER)
+                .execute(&state.db).await
+                .map_err(|e| format!("create failed (username/email may already exist): {e}"))?;
+            println!("Created admin account '{username}' <{email}> (tier {}).", models::ADMIN_TIER);
+            Ok(())
+        }
+        other => Err(format!(
+            "unknown admin command: {other:?} (try: create <email> <username> <password> | promote <email>)"
+        )),
     }
 }
 

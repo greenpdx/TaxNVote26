@@ -63,12 +63,16 @@ impl AccessDeniedHandler for JsonDenied {
     }
 }
 
-/// Build the ACL layer that gates `/api/admin/**` to admin-tier callers.
+/// Build the ACL layer that gates the admin routes to admin-tier callers.
+///
+/// This layer is applied only to the admin sub-router, and axum strips the
+/// `/api/admin` nest prefix before the layer runs (it would see `/users`, not
+/// `/api/admin/users`). So the rule matches ANY path reaching this layer and
+/// simply requires the admin role; everything non-admin hits the default Deny.
 pub fn admin_layer(jwt_secret: String) -> AclLayer<JwtRoleExtractor, HeaderIdExtractor> {
     let table = AclTable::builder()
         .default_action(AclAction::Deny)
-        .add_glob(
-            "/api/admin/**",
+        .add_any(
             AclRuleFilter::new()
                 .role_mask(ROLE_ADMIN)
                 .action(AclAction::Allow),
