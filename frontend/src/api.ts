@@ -351,6 +351,26 @@ export async function adminSetTemplateHidden(token: string, receiptNo: string, h
   const action = hidden ? 'hide' : 'unhide'
   await adminReq(`/templates/${encodeURIComponent(receiptNo)}/${action}`, token, { method: 'POST' })
 }
+export interface AdminTaxDollar {
+  receipt_token: string; subject_kind: string; subject_id: number
+  fiscal_year: string; template_receipt_no: string; hidden: boolean; created_at: string
+}
+export interface NodeAmount { node_id: string; amount: number }
+
+export async function adminListTaxdollars(token: string): Promise<AdminTaxDollar[]> {
+  return (await adminReq('/taxdollars', token)).json()
+}
+export async function adminTaxdollarAllocations(token: string, receiptToken: string): Promise<NodeAmount[]> {
+  return (await adminReq(`/taxdollars/${encodeURIComponent(receiptToken)}/allocations`, token)).json()
+}
+export async function adminSetTaxdollarHidden(token: string, receiptToken: string, hidden: boolean): Promise<void> {
+  const action = hidden ? 'hide' : 'unhide'
+  await adminReq(`/taxdollars/${encodeURIComponent(receiptToken)}/${action}`, token, { method: 'POST' })
+}
+export async function adminTemplateEntries(token: string, receiptNo: string): Promise<NodeAmount[]> {
+  return (await adminReq(`/templates/${encodeURIComponent(receiptNo)}/entries`, token)).json()
+}
+
 export async function adminListAudit(token: string, action = ''): Promise<AuditEntry[]> {
   const qs = action ? `?action=${encodeURIComponent(action)}` : ''
   return (await adminReq(`/audit${qs}`, token)).json()

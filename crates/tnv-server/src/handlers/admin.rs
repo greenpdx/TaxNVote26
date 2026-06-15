@@ -247,6 +247,117 @@ pub async fn unhide_template(
     set_template_hidden(&state, &claims, &ip.to_string(), &receipt_no, false).await
 }
 
+// ─── Submissions (Tax Dollars) ───────────────────────────────────
+
+pub async fn list_taxdollars(
+    State(state): State<AppState>,
+    claims: Claims,
+    Query(q): Query<ListQuery>,
+) -> Resp<Vec<AdminTaxDollar>> {
+    require_admin(&claims)?;
+    let limit = limit_of(&q);
+    let rows = sqlx::query(&state.q(
+        "SELECT receipt_token, subject_kind, subject_id, fiscal_year, template_receipt_no, hidden, created_at \
+         FROM tax_dollars ORDER BY id DESC LIMIT ?"
+    ))
+        .bind(limit)
+        .fetch_all(&state.db).await
+        .map_err(|e| internal(e.to_string()))?;
+    let out = rows.iter().map(|r| AdminTaxDollar {
+        receipt_token: r.try_get("receipt_token").unwrap_or_default(),
+        subject_kind: r.try_get("subject_kind").unwrap_or_default(),
+        subject_id: r.try_get("subject_id").unwrap_or(0),
+        fiscal_year: r.try_get("fiscal_year").unwrap_or_default(),
+        template_receipt_no: r.try_get("template_receipt_no").unwrap_or_default(),
+        hidden: r.try_get::<i64, _>("hidden").unwrap_or(0) != 0,
+        created_at: r.try_get("created_at").unwrap_or_default(),
+    }).collect();
+    Ok(Json(out))
+}
+
+pub async fn taxdollar_allocations(
+    State(state): State<AppState>,
+    claims: Claims,
+    Path(receipt_token): Path<String>,
+) -> Resp<Vec<NodeAmount>> {
+    require_admin(&claims)?;
+    let rows = sqlx::query(&state.q(
+        "SELECT a.node_id, a.pct FROM tax_dollar_allocations a \
+         JOIN tax_dollars t ON a.tax_dollar_id = t.id WHERE t.receipt_token = ?"
+    ))
+        .bind(&receipt_token)
+        .fetch_all(&state.db).await
+        .map_err(|e| internal(e.to_string()))?;
+    let out = rows.iter().map(|r| NodeAmount {
+        node_id: r.try_get("node_id").unwrap_or_default(),
+        amount: r.try_get("pct").unwrap_or(0.0),
+    }).collect();
+    Ok(Json(out))
+}
+
+async fn set_taxdollar_hidden(
+    state: &AppState,
+    claims: &Claims,
+    ip: &str,
+    receipt_token: &str,
+    hidden: bool,
+) -> Resp<Value> {
+    let n = sqlx::query(&state.q("UPDATE tax_dollars SET hidden = ? WHERE receipt_token = ?"))
+        .bind(if hidden { 1 } else { 0 })
+        .bind(receipt_token)
+        .execute(&state.db).await
+        .map_err(|e| internal(e.to_string()))?
+        .rows_affected();
+    if n == 0 {
+        return Err(err(StatusCode::NOT_FOUND, "submission not found"));
+    }
+    // Visibility changed → drop cached aggregates so the People's Budget recomputes.
+    state.aggregate_cache.write().await.clear();
+    let action = if hidden { "admin.taxdollar.hide" } else { "admin.taxdollar.unhide" };
+    state.audit(SUBJECT_ACCOUNT, Some(claims.sub), action, Some("taxdollar"), Some(receipt_token), None, Some(ip)).await;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn hide_taxdollar(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    claims: Claims,
+    Path(receipt_token): Path<String>,
+) -> Resp<Value> {
+    require_admin(&claims)?;
+    set_taxdollar_hidden(&state, &claims, &ip.to_string(), &receipt_token, true).await
+}
+
+pub async fn unhide_taxdollar(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    claims: Claims,
+    Path(receipt_token): Path<String>,
+) -> Resp<Value> {
+    require_admin(&claims)?;
+    set_taxdollar_hidden(&state, &claims, &ip.to_string(), &receipt_token, false).await
+}
+
+pub async fn template_entries(
+    State(state): State<AppState>,
+    claims: Claims,
+    Path(receipt_no): Path<String>,
+) -> Resp<Vec<NodeAmount>> {
+    require_admin(&claims)?;
+    let rows = sqlx::query(&state.q(
+        "SELECT e.node_id, e.value FROM template_entries e \
+         JOIN templates t ON e.template_id = t.id WHERE t.receipt_no = ?"
+    ))
+        .bind(&receipt_no)
+        .fetch_all(&state.db).await
+        .map_err(|e| internal(e.to_string()))?;
+    let out = rows.iter().map(|r| NodeAmount {
+        node_id: r.try_get("node_id").unwrap_or_default(),
+        amount: r.try_get("value").unwrap_or(0.0),
+    }).collect();
+    Ok(Json(out))
+}
+
 // ─── Audit ───────────────────────────────────────────────────────
 
 pub async fn list_audit(

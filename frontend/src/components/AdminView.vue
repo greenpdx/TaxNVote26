@@ -1,31 +1,50 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useSessionStore } from '../stores/session'
+import { useBudgetStore } from '../stores/budget'
+import { buildRollup, type RollupNode } from '../rollup'
+import RollupRow from './RollupRow.vue'
 import * as api from '../api'
 
-// This view is only rendered when the session is an admin (gated in App.vue),
-// so it uses the single session token — no separate admin login.
+// Rendered only when the session is an admin (gated in App.vue) → single token.
 const session = useSessionStore()
+const budget = useBudgetStore()
 
-type Tab = 'users' | 'templates' | 'audit' | 'config'
-const tab = ref<Tab>('users')
+type Tab = 'users' | 'submissions' | 'templates' | 'audit' | 'config'
+const tab = ref<Tab>('submissions')
 const note = ref<string | null>(null)
 const noteErr = ref(false)
 
 const users = ref<api.AdminUser[]>([])
 const userQuery = ref('')
+const submissions = ref<api.AdminTaxDollar[]>([])
 const templates = ref<api.AdminTemplate[]>([])
 const audit = ref<api.AuditEntry[]>([])
 const config = ref<api.SettingItem[]>([])
+
+// Expanded record rollup (one at a time).
+const openKey = ref<string | null>(null)
+const rollup = ref<RollupNode[]>([])
+const rollupBusy = ref(false)
 
 const tok = () => session.token!
 function flash(t: string, err = false) { note.value = t; noteErr.value = err }
 function fail(e: unknown) { flash(e instanceof Error ? e.message : String(e), true) }
 
+// id → human name from the loaded budget tree (falls back to the raw id).
+const nameMap = computed(() => {
+  const m = new Map<string, string>()
+  for (const n of budget.nodes) m.set(n.id, n.name)
+  return m
+})
+function nameOf(id: string): string { return nameMap.value.get(id) || id }
+
 async function load() {
   if (!session.isAdmin) return
+  collapse()
   try {
     if (tab.value === 'users') users.value = await api.adminListUsers(tok(), userQuery.value.trim())
+    else if (tab.value === 'submissions') submissions.value = await api.adminListTaxdollars(tok())
     else if (tab.value === 'templates') templates.value = await api.adminListTemplates(tok())
     else if (tab.value === 'audit') audit.value = await api.adminListAudit(tok())
     else if (tab.value === 'config') config.value = await api.adminGetConfig(tok())
@@ -34,13 +53,23 @@ async function load() {
 watch(tab, load)
 onMounted(load)
 
+function collapse() { openKey.value = null; rollup.value = [] }
+async function openRollup(key: string, fetcher: () => Promise<api.NodeAmount[]>) {
+  if (openKey.value === key) { collapse(); return }
+  openKey.value = key; rollup.value = []; rollupBusy.value = true
+  try { rollup.value = buildRollup(await fetcher()) } catch (e) { fail(e) } finally { rollupBusy.value = false }
+}
+
 async function toggleDisabled(u: api.AdminUser) {
   try { await api.adminSetUserDisabled(tok(), u.kind, u.id, !u.disabled); flash(`${u.name} ${u.disabled ? 'enabled' : 'disabled'}`); await load() } catch (e) { fail(e) }
 }
 async function toggleAdmin(u: api.AdminUser) {
   try { await api.adminSetRole(tok(), u.kind, u.id, u.tier >= 100 ? 0 : 100); flash(`Role updated for ${u.name}`); await load() } catch (e) { fail(e) }
 }
-async function toggleHidden(t: api.AdminTemplate) {
+async function toggleSubHidden(s: api.AdminTaxDollar) {
+  try { await api.adminSetTaxdollarHidden(tok(), s.receipt_token, !s.hidden); flash(`${s.receipt_token} ${s.hidden ? 'shown' : 'hidden'}`); await load() } catch (e) { fail(e) }
+}
+async function toggleTplHidden(t: api.AdminTemplate) {
   try { await api.adminSetTemplateHidden(tok(), t.receipt_no, !t.hidden); flash(`${t.receipt_no} ${t.hidden ? 'shown' : 'hidden'}`); await load() } catch (e) { fail(e) }
 }
 async function saveSetting(s: api.SettingItem, value: string) {
@@ -50,12 +79,11 @@ async function saveSetting(s: api.SettingItem, value: string) {
 
 <template>
   <div class="admin" v-if="session.isAdmin">
-    <div class="admin-bar">
-      <span class="muted">Signed in as admin: <b>{{ session.name }}</b></span>
-    </div>
+    <div class="admin-bar"><span class="muted">Signed in as admin: <b>{{ session.name }}</b></span></div>
 
     <nav class="subtabs">
       <button :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
+      <button :class="{ active: tab === 'submissions' }" @click="tab = 'submissions'">Submissions</button>
       <button :class="{ active: tab === 'templates' }" @click="tab = 'templates'">Templates</button>
       <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'">Audit</button>
       <button :class="{ active: tab === 'config' }" @click="tab = 'config'">Config</button>
@@ -66,22 +94,15 @@ async function saveSetting(s: api.SettingItem, value: string) {
 
     <!-- Users -->
     <div v-if="tab === 'users'">
-      <div class="search-wrap">
-        <input v-model="userQuery" class="search" placeholder="Search name / username…" @keyup.enter="load" />
-      </div>
+      <div class="search-wrap"><input v-model="userQuery" class="search" placeholder="Search name / username…" @keyup.enter="load" /></div>
       <table class="tbl">
         <thead><tr><th>Kind</th><th>Name</th><th>Tier</th><th>Status</th><th></th></tr></thead>
         <tbody>
           <tr v-for="u in users" :key="u.kind + u.id" :class="{ off: u.disabled }">
-            <td>{{ u.kind }}</td>
-            <td>{{ u.name }}</td>
-            <td>{{ u.tier }}</td>
-            <td>{{ u.disabled ? 'disabled' : 'active' }}</td>
+            <td>{{ u.kind }}</td><td>{{ u.name }}</td><td>{{ u.tier }}</td><td>{{ u.disabled ? 'disabled' : 'active' }}</td>
             <td class="row-actions">
               <button class="abtn" @click="toggleDisabled(u)">{{ u.disabled ? 'Enable' : 'Disable' }}</button>
-              <button v-if="u.kind === 'account'" class="abtn" @click="toggleAdmin(u)">
-                {{ u.tier >= 100 ? 'Revoke admin' : 'Make admin' }}
-              </button>
+              <button v-if="u.kind === 'account'" class="abtn" @click="toggleAdmin(u)">{{ u.tier >= 100 ? 'Revoke admin' : 'Make admin' }}</button>
             </td>
           </tr>
           <tr v-if="users.length === 0"><td colspan="5" class="muted">No users.</td></tr>
@@ -89,22 +110,64 @@ async function saveSetting(s: api.SettingItem, value: string) {
       </table>
     </div>
 
+    <!-- Submissions -->
+    <div v-else-if="tab === 'submissions'">
+      <table class="tbl">
+        <thead><tr><th>Receipt</th><th>By</th><th>FY</th><th>State</th><th></th></tr></thead>
+        <tbody>
+          <template v-for="s in submissions" :key="s.receipt_token">
+            <tr :class="{ off: s.hidden }">
+              <td class="mono">{{ s.receipt_token }}</td>
+              <td>{{ s.subject_kind }}#{{ s.subject_id }}</td>
+              <td>{{ s.fiscal_year }}</td>
+              <td>{{ s.hidden ? 'hidden' : 'visible' }}</td>
+              <td class="row-actions">
+                <button class="abtn" @click="openRollup(s.receipt_token, () => api.adminTaxdollarAllocations(tok(), s.receipt_token))">
+                  {{ openKey === s.receipt_token ? 'Hide data' : 'View data' }}
+                </button>
+                <button class="abtn" @click="toggleSubHidden(s)">{{ s.hidden ? 'Unhide' : 'Hide' }}</button>
+              </td>
+            </tr>
+            <tr v-if="openKey === s.receipt_token">
+              <td colspan="5" class="rollup-cell">
+                <div v-if="rollupBusy" class="muted">Loading…</div>
+                <RollupRow v-else v-for="n in rollup" :key="n.id" :node="n" :name-of="nameOf" />
+                <div v-if="!rollupBusy && rollup.length === 0" class="muted">No allocations.</div>
+              </td>
+            </tr>
+          </template>
+          <tr v-if="submissions.length === 0"><td colspan="5" class="muted">No submissions.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
     <!-- Templates -->
     <div v-else-if="tab === 'templates'">
       <table class="tbl">
-        <thead><tr><th>Receipt</th><th>Name</th><th>FY</th><th>Owner</th><th>State</th><th></th></tr></thead>
+        <thead><tr><th>Receipt</th><th>Name</th><th>FY</th><th>State</th><th></th></tr></thead>
         <tbody>
-          <tr v-for="t in templates" :key="t.receipt_no" :class="{ off: t.hidden }">
-            <td>{{ t.receipt_no }}</td>
-            <td>{{ t.name }}</td>
-            <td>{{ t.fiscal_year }}</td>
-            <td>{{ t.subject_kind }}#{{ t.subject_id }}</td>
-            <td>{{ t.hidden ? 'hidden' : 'visible' }}</td>
-            <td class="row-actions">
-              <button class="abtn" @click="toggleHidden(t)">{{ t.hidden ? 'Unhide' : 'Hide' }}</button>
-            </td>
-          </tr>
-          <tr v-if="templates.length === 0"><td colspan="6" class="muted">No templates.</td></tr>
+          <template v-for="t in templates" :key="t.receipt_no">
+            <tr :class="{ off: t.hidden }">
+              <td class="mono">{{ t.receipt_no }}</td>
+              <td>{{ t.name }}</td>
+              <td>{{ t.fiscal_year }}</td>
+              <td>{{ t.hidden ? 'hidden' : 'visible' }}</td>
+              <td class="row-actions">
+                <button class="abtn" @click="openRollup(t.receipt_no, () => api.adminTemplateEntries(tok(), t.receipt_no))">
+                  {{ openKey === t.receipt_no ? 'Hide data' : 'View data' }}
+                </button>
+                <button class="abtn" @click="toggleTplHidden(t)">{{ t.hidden ? 'Unhide' : 'Hide' }}</button>
+              </td>
+            </tr>
+            <tr v-if="openKey === t.receipt_no">
+              <td colspan="5" class="rollup-cell">
+                <div v-if="rollupBusy" class="muted">Loading…</div>
+                <RollupRow v-else v-for="n in rollup" :key="n.id" :node="n" :name-of="nameOf" />
+                <div v-if="!rollupBusy && rollup.length === 0" class="muted">No entries.</div>
+              </td>
+            </tr>
+          </template>
+          <tr v-if="templates.length === 0"><td colspan="5" class="muted">No templates.</td></tr>
         </tbody>
       </table>
     </div>
@@ -135,8 +198,7 @@ async function saveSetting(s: api.SettingItem, value: string) {
             <td>{{ s.key }}</td>
             <td>
               <select :value="s.value || 'false'" @change="saveSetting(s, ($event.target as HTMLSelectElement).value)">
-                <option value="true">true</option>
-                <option value="false">false</option>
+                <option value="true">true</option><option value="false">false</option>
               </select>
             </td>
             <td class="mono muted">{{ s.updated_at }}</td>
@@ -150,9 +212,9 @@ async function saveSetting(s: api.SettingItem, value: string) {
 
 <style scoped>
 .admin { padding: 8px 16px 24px; }
-.muted { color: #64748b; font-size: 12px; }
+.muted { color: #64748b; font-size: 12px; padding: 6px 4px; }
 .admin-bar { display: flex; justify-content: space-between; align-items: center; padding: 4px 0 8px; }
-.subtabs { display: flex; gap: 4px; margin-bottom: 8px; }
+.subtabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
 .subtabs button { background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 5px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .subtabs button.active { background: #3b82f6; border-color: #3b82f6; color: #fff; font-weight: 600; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -161,5 +223,6 @@ async function saveSetting(s: api.SettingItem, value: string) {
 .tbl tr.off { opacity: 0.5; }
 .row-actions { display: flex; gap: 4px; }
 .mono { font-family: ui-monospace, monospace; font-size: 11px; color: #94a3b8; }
+.rollup-cell { background: #0b1424; padding: 6px 8px 8px; }
 .tbl select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 4px 6px; border-radius: 6px; }
 </style>

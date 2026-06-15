@@ -257,6 +257,24 @@ pub struct AdminTemplate {
 }
 
 #[derive(Debug, Serialize)]
+pub struct AdminTaxDollar {
+    pub receipt_token: String,
+    pub subject_kind: String,
+    pub subject_id: i64,
+    pub fiscal_year: String,
+    pub template_receipt_no: String,
+    pub hidden: bool,
+    pub created_at: String,
+}
+
+/// One node's amount within a record (pct for submissions, dollars for templates).
+#[derive(Debug, Serialize)]
+pub struct NodeAmount {
+    pub node_id: String,
+    pub amount: f64,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AuditEntry {
     pub id: i64,
     pub ts: String,
