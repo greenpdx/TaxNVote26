@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useBudgetStore } from '../stores/budget'
-import { getTaxDollarCsv, parseTemplateEntries } from '../api'
+import { fetchSubmission, parseTemplateEntries } from '../api'
 import { buildRollup, type RollupNode } from '../rollup'
 import RollupRow from './RollupRow.vue'
 
@@ -11,6 +11,8 @@ const budget = useBudgetStore()
 const rollup = ref<RollupNode[]>([])
 const fiscalYear = ref('')
 const loading = ref(true)
+const needPin = ref(false)
+const pinInput = ref('')
 const err = ref<string | null>(null)
 
 const nameMap = computed(() => {
@@ -20,18 +22,28 @@ const nameMap = computed(() => {
 })
 function nameOf(id: string): string { return nameMap.value.get(id) || id }
 
-onMounted(async () => {
+async function load(pin = '') {
+  err.value = null
+  loading.value = true
   try {
-    const csv = await getTaxDollarCsv(props.token)
+    const csv = await fetchSubmission(props.token, pin)
+    needPin.value = false
     fiscalYear.value = (csv.match(/^#fiscal_year,(.+)$/m)?.[1] || '').trim()
-    const allocs = parseTemplateEntries(csv).map(e => ({ node_id: e.id, amount: e.value }))
-    rollup.value = buildRollup(allocs)
+    rollup.value = buildRollup(parseTemplateEntries(csv).map(e => ({ node_id: e.id, amount: e.value })))
   } catch (e) {
-    err.value = e instanceof Error ? e.message : String(e)
+    if ((e as { pinRequired?: boolean })?.pinRequired) needPin.value = true
+    else err.value = e instanceof Error ? e.message : String(e)
   } finally {
     loading.value = false
   }
-})
+}
+
+function submitPin() {
+  if (!/^\d{4}$/.test(pinInput.value)) { err.value = 'Enter a 4-digit PIN.'; return }
+  load(pinInput.value)
+}
+
+onMounted(() => load())
 </script>
 
 <template>
@@ -43,7 +55,20 @@ onMounted(async () => {
 
     <main class="pub-main">
       <div v-if="loading" class="pub-msg">Loading submission…</div>
+
+      <!-- PIN gate -->
+      <div v-else-if="needPin" class="pub-pin">
+        <p class="pub-msg">This submission is private until the data is released. Enter the access PIN to view it.</p>
+        <div class="pin-row">
+          <input v-model="pinInput" type="password" inputmode="numeric" maxlength="4"
+                 placeholder="4-digit PIN" @keyup.enter="submitPin" />
+          <button @click="submitPin">View</button>
+        </div>
+        <div v-if="err" class="pub-msg err">{{ err }}</div>
+      </div>
+
       <div v-else-if="err" class="pub-msg err">Submission not found.</div>
+
       <template v-else>
         <p class="pub-receipt">Receipt <span class="mono">{{ token }}</span></p>
         <div class="pub-tree">
@@ -68,8 +93,14 @@ onMounted(async () => {
 .pub-receipt { font-size: 12px; color: #64748b; margin-bottom: 12px; }
 .mono { font-family: ui-monospace, monospace; color: #94a3b8; }
 .pub-tree { border-top: 1px solid #1e293b; }
-.pub-msg { padding: 32px; text-align: center; color: #64748b; }
+.pub-msg { padding: 16px; text-align: center; color: #64748b; }
 .pub-msg.err { color: #f87171; }
+.pub-pin { max-width: 280px; margin: 24px auto; text-align: center; }
+.pin-row { display: flex; gap: 6px; margin-top: 8px; }
+.pin-row input { flex: 1; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px 12px; border-radius: 8px; font-size: 15px; outline: none; }
+.pin-row input:focus { border-color: #3b82f6; }
+.pin-row button { background: #2563eb; border: 1px solid #2563eb; color: #fff; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+.pin-row button:hover { background: #1d4ed8; }
 .pub-foot { padding: 16px 4px; border-top: 1px solid #1e293b; text-align: center; }
 .pub-foot a { color: #60a5fa; font-size: 13px; text-decoration: none; }
 .pub-foot a:hover { text-decoration: underline; }

@@ -1,15 +1,34 @@
-use axum::{extract::{State, Path}, http::StatusCode, Json};
+use axum::{extract::{State, Path, Query}, http::{StatusCode, HeaderMap}, Json};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
+use crate::auth::{hash_secret, ct_eq};
 use crate::csv_parse::parse_taxdollar_csv;
 use crate::extract::ClientIp;
 use crate::models::*;
 use crate::state::*;
 use crate::validation::validate_taxdollar;
 
+#[derive(Debug, Deserialize)]
+pub struct ViewQuery {
+    pub pin: Option<String>,
+}
+
+/// Hash a 4-digit access PIN against its submission's (unguessable) receipt
+/// token as salt. Returns None unless the PIN is exactly 4 digits.
+fn access_pin_hash(receipt_token: &str, pin: &str) -> Option<String> {
+    let pin = pin.trim();
+    if pin.len() == 4 && pin.chars().all(|c| c.is_ascii_digit()) {
+        Some(hash_secret(receipt_token, pin))
+    } else {
+        None
+    }
+}
+
 pub async fn submit_taxdollar(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     claims: Claims,
     body: String,
 ) -> Result<Json<TaxDollarReceipt>, (StatusCode, Json<Value>)> {
@@ -44,6 +63,11 @@ pub async fn submit_taxdollar(
     let receipt_token = state.generate_td_receipt();
     let now = chrono::Utc::now().to_rfc3339();
 
+    // Optional access PIN (X-Access-Pin: NNNN) gating the public link before release.
+    let pin_hash: Option<String> = headers.get("x-access-pin")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|p| access_pin_hash(&receipt_token, p));
+
     let mut tx = state.db.begin().await.map_err(|e| internal(e.to_string()))?;
 
     // Upsert: drop the prior TD for (subject, fiscal_year). CASCADE removes allocations.
@@ -58,8 +82,8 @@ pub async fn submit_taxdollar(
     let replaced = del.rows_affected() > 0;
 
     let row = sqlx::query(&state.q(
-        "INSERT INTO tax_dollars (receipt_token, subject_kind, subject_id, fiscal_year, template_receipt_no, raw_csv, checksum, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
+        "INSERT INTO tax_dollars (receipt_token, subject_kind, subject_id, fiscal_year, template_receipt_no, raw_csv, checksum, access_pin_hash, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
     ))
         .bind(&receipt_token)
         .bind(&claims.kind)
@@ -68,6 +92,7 @@ pub async fn submit_taxdollar(
         .bind(&parsed.template_id)
         .bind(&parsed.raw_csv)
         .bind(&parsed.checksum)
+        .bind(&pin_hash)
         .bind(&now)
         .fetch_one(&mut *tx).await
         .map_err(|e| internal(e.to_string()))?;
@@ -100,16 +125,41 @@ pub async fn submit_taxdollar(
 
 pub async fn get_taxdollar(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Path(receipt_token): Path<String>,
+    Query(q): Query<ViewQuery>,
 ) -> Result<String, (StatusCode, Json<Value>)> {
+    // Throttle so the 4-digit access PIN can't be brute-forced (the token is
+    // already unguessable; this guards the PIN).
+    state.rate_limit(ip, "view", RATE_VIEW_MAX, RATE_VIEW_WINDOW_SECS)
+        .await.map_err(too_many)?;
+
     let row = sqlx::query(&state.q(
-        "SELECT raw_csv FROM tax_dollars WHERE receipt_token = ? AND hidden = 0 LIMIT 1"
+        "SELECT raw_csv, access_pin_hash FROM tax_dollars WHERE receipt_token = ? AND hidden = 0 LIMIT 1"
     ))
         .bind(&receipt_token)
         .fetch_optional(&state.db).await
         .map_err(|e| internal(e.to_string()))?
         .ok_or_else(|| not_found("tax dollar not found"))?;
-    row.try_get::<String, _>("raw_csv").map_err(|e| internal(e.to_string()))
+
+    let csv: String = row.try_get("raw_csv").map_err(|e| internal(e.to_string()))?;
+    let pin_hash: Option<String> = row.try_get("access_pin_hash").ok().flatten();
+
+    // Once the data is released, links are public — no PIN needed.
+    if state.setting_or("data_public", false).await {
+        return Ok(csv);
+    }
+
+    // Before release: gate on the per-submission access PIN.
+    let Some(hash) = pin_hash else {
+        return Err((StatusCode::FORBIDDEN,
+            Json(json!({"error": "this submission is private until the data is released"}))));
+    };
+    match q.pin {
+        None => Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "pin required", "pin_required": true})))),
+        Some(pin) if ct_eq(hash_secret(&receipt_token, pin.trim()).as_bytes(), hash.as_bytes()) => Ok(csv),
+        Some(_) => Err((StatusCode::FORBIDDEN, Json(json!({"error": "invalid pin"})))),
+    }
 }
 
 pub async fn my_taxdollars(
@@ -117,7 +167,7 @@ pub async fn my_taxdollars(
     claims: Claims,
 ) -> Result<Json<Vec<TaxDollarSummary>>, (StatusCode, Json<Value>)> {
     let rows = sqlx::query(&state.q(
-        "SELECT receipt_token, fiscal_year, template_receipt_no, created_at \
+        "SELECT receipt_token, fiscal_year, template_receipt_no, raw_csv, created_at \
          FROM tax_dollars WHERE subject_kind = ? AND subject_id = ? ORDER BY id DESC"
     ))
         .bind(&claims.kind)
@@ -130,6 +180,7 @@ pub async fn my_taxdollars(
         fiscal_year: r.try_get("fiscal_year").unwrap_or_default(),
         template_receipt_no: r.try_get("template_receipt_no").unwrap_or_default(),
         created_at: r.try_get("created_at").unwrap_or_default(),
+        raw_csv: r.try_get("raw_csv").unwrap_or_default(),
     }).collect();
     Ok(Json(summaries))
 }

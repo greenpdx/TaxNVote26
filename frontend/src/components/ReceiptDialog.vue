@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { getTaxDollarCsv } from '../api'
 
-const props = defineProps<{ open: boolean; receipt: string }>()
+const props = defineProps<{ open: boolean; receipt: string; csv?: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const copied = ref(false)
@@ -11,18 +10,15 @@ const inputEl = ref<HTMLInputElement | null>(null)
 // Full shareable link to the public submission view (hash route).
 const url = computed(() => `${window.location.origin}/#/s/${props.receipt}`)
 
-async function download() {
-  try {
-    const csv = await getTaxDollarCsv(props.receipt)
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `tax-dollar-${props.receipt}.csv`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(a.href)
-  } catch { /* network error — the link still works */ }
+function download() {
+  const blob = new Blob([props.csv || ''], { type: 'text/csv' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `tax-dollar-${props.receipt}.csv`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(a.href)
 }
 
 watch(() => props.open, (o) => { if (o) copied.value = false })
@@ -51,8 +47,8 @@ async function copy() {
     <div class="dialog">
       <h3 class="r-title">Submission saved ✓</h3>
       <p class="r-hint">
-        This link is the only way to find your submission later — copy and keep
-        it somewhere safe. Anyone with the link can view this submission.
+        Keep this link to find your submission later. Until the data is released,
+        opening it requires the PIN you just set.
       </p>
       <div class="r-row">
         <input ref="inputEl" class="r-in" :value="url" readonly @focus="inputEl?.select()" />

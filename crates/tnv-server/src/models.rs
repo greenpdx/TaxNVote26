@@ -43,6 +43,9 @@ pub const RATE_SUBMIT_MAX: usize = 10;
 pub const RATE_SUBMIT_WINDOW_SECS: u64 = 900;
 pub const RATE_TEMPLATE_MAX: usize = 10;
 pub const RATE_TEMPLATE_WINDOW_SECS: u64 = 900;
+// Public submission-view endpoint: throttles access-PIN attempts.
+pub const RATE_VIEW_MAX: usize = 20;
+pub const RATE_VIEW_WINDOW_SECS: u64 = 60;
 
 /// Max failed verification-code attempts before the pending row is burned.
 pub const MAX_VERIFY_ATTEMPTS: i64 = 5;
@@ -173,6 +176,9 @@ pub struct TaxDollarSummary {
     pub fiscal_year: String,
     pub template_receipt_no: String,
     pub created_at: String,
+    /// The submission CSV — included so the authenticated owner can view their
+    /// own submission without the public link's access PIN.
+    pub raw_csv: String,
 }
 
 // ─── CSV parsed structures ────────────────────────────────────────
@@ -305,4 +311,6 @@ pub struct SetSettingRequest {
 }
 
 /// Editable runtime settings (allowlist — never exposes secrets).
-pub const SETTING_KEYS: &[&str] = &["registration_open", "demo_identity_enabled", "maintenance_mode"];
+/// `data_public`: when on, submitted Tax Dollars are viewable by their public
+/// link without an access PIN (the post-release-date state).
+pub const SETTING_KEYS: &[&str] = &["registration_open", "demo_identity_enabled", "maintenance_mode", "data_public"];
