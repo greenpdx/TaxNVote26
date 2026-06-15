@@ -8,15 +8,22 @@ const emit = defineEmits<{ (e: 'close'): void; (e: 'success'): void }>()
 
 const session = useSessionStore()
 
-type Mode = 'signin' | 'signup' | 'verify' | 'demo'
-const mode = ref<Mode>('signin')
+// Coupon that unlocks demo identity (programmable via build env).
+const DEMO_COUPON = (import.meta.env.VITE_DEMO_COUPON as string) || 'ISDC2026'
+
+type View = 'signin' | 'signup' | 'verify'
+const view = ref<View>('signin')
+const step = ref<1 | 2>(1)     // sign-up step
+const isDemo = ref(false)      // chosen by the coupon at step 1
 
 const email = ref('')
-const password = ref('')
 const username = ref('')
+const coupon = ref('')
+const secret = ref('')
+const secret2 = ref('')
+const showSecret = ref(false)
+const showSecret2 = ref(false)
 const code = ref('')
-const demoName = ref('')
-const demoPin = ref('')
 
 const localErr = ref<string | null>(null)
 const note = ref<string | null>(null)
@@ -26,30 +33,57 @@ const powMsg = ref('')
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const err = computed(() => localErr.value || session.error)
 const busy = computed(() => session.busy || signupBusy.value)
+const couponOk = computed(() => coupon.value.trim() === DEMO_COUPON)
 
 watch(() => props.open, (o) => {
-  if (o) {
-    mode.value = 'signin'
-    email.value = ''; password.value = ''; username.value = ''; code.value = ''
-    demoName.value = ''; demoPin.value = ''
-    localErr.value = null; note.value = null; powMsg.value = ''
-    session.error = null
-  }
+  if (o) reset()
 })
-function setMode(m: Mode) {
-  mode.value = m
+function reset() {
+  view.value = 'signin'; step.value = 1; isDemo.value = false
+  email.value = ''; username.value = ''; coupon.value = ''
+  secret.value = ''; secret2.value = ''; code.value = ''
+  showSecret.value = false; showSecret2.value = false
+  localErr.value = null; note.value = null; powMsg.value = ''
+  session.error = null
+}
+function go(v: View) {
+  view.value = v; step.value = 1
+  secret.value = ''; secret2.value = ''; code.value = ''
+  showSecret.value = false; showSecret2.value = false
   localErr.value = null; note.value = null; session.error = null
 }
 
 async function doSignin() {
-  if (await session.loginEmail(email.value.trim(), password.value)) done()
+  if (await session.loginEmail(email.value.trim(), secret.value)) done()
 }
 
-async function doSignup() {
-  localErr.value = null; note.value = null
-  if (username.value.trim().length < 3) { localErr.value = 'Username must be at least 3 characters.'; return }
-  if (!email.value.includes('@')) { localErr.value = 'Enter a valid email.'; return }
-  if (password.value.length < 8) { localErr.value = 'Password must be at least 8 characters.'; return }
+// Step 1 → 2: validate identity fields, decide demo vs account by the coupon.
+function nextStep() {
+  localErr.value = null
+  isDemo.value = couponOk.value
+  if (isDemo.value) {
+    if (username.value.trim().length < 1) { localErr.value = 'Enter a name.'; return }
+  } else {
+    if (username.value.trim().length < 3) { localErr.value = 'Username must be at least 3 characters.'; return }
+    if (!email.value.includes('@')) { localErr.value = 'Enter a valid email.'; return }
+  }
+  secret.value = ''; secret2.value = ''
+  step.value = 2
+}
+
+async function finishSignup() {
+  localErr.value = null
+  if (secret.value !== secret2.value) {
+    localErr.value = isDemo.value ? 'PINs do not match.' : 'Passwords do not match.'
+    return
+  }
+  if (isDemo.value) {
+    if (!/^\d{4}$/.test(secret.value)) { localErr.value = 'PIN must be 4 digits.'; return }
+    if (await session.identify(username.value.trim(), secret.value)) done()
+    return
+  }
+  // Account: PoW + register, then email verification.
+  if (secret.value.length < 8) { localErr.value = 'Password must be at least 8 characters.'; return }
   signupBusy.value = true
   powMsg.value = 'Preparing…'
   try {
@@ -59,8 +93,8 @@ async function doSignup() {
       powMsg.value = `Solving proof-of-work… ${tried.toLocaleString()} tries`
     })
     powMsg.value = 'Creating your account…'
-    await api.register(username.value.trim(), email.value.trim(), password.value, ch.challenge, nonce)
-    setMode('verify')
+    await api.register(username.value.trim(), email.value.trim(), secret.value, ch.challenge, nonce)
+    view.value = 'verify'
     note.value = 'We emailed you a 6-digit code. Enter it to finish.'
   } catch (e) {
     localErr.value = msg(e)
@@ -73,27 +107,26 @@ async function doVerify() {
   if (await session.verifyEmail(email.value.trim(), code.value.trim())) done()
 }
 
-async function doDemo() {
-  if (await session.identify(demoName.value.trim(), demoPin.value.trim())) done()
-}
-
 function done() { emit('success'); emit('close') }
 </script>
 
 <template>
   <div v-if="open" class="overlay" @click.self="emit('close')">
     <div class="dialog">
-      <!-- Tabs (hidden during the verify step) -->
-      <div v-if="mode !== 'verify'" class="auth-tabs">
-        <button :class="{ on: mode === 'signin' }" @click="setMode('signin')">Sign in</button>
-        <button :class="{ on: mode === 'signup' }" @click="setMode('signup')">Sign up</button>
+      <!-- Tabs (hidden during sign-up step 2 and the verify step) -->
+      <div v-if="view !== 'verify' && !(view === 'signup' && step === 2)" class="auth-tabs">
+        <button :class="{ on: view === 'signin' }" @click="go('signin')">Sign in</button>
+        <button :class="{ on: view === 'signup' }" @click="go('signup')">Sign up</button>
       </div>
 
       <!-- Sign in -->
-      <template v-if="mode === 'signin'">
+      <template v-if="view === 'signin'">
         <p class="d-hint">Sign in with your email and password.</p>
         <input class="d-in" v-model="email" type="email" placeholder="Email" autocomplete="username" @keyup.enter="doSignin" />
-        <input class="d-in" v-model="password" type="password" placeholder="Password" autocomplete="current-password" @keyup.enter="doSignin" />
+        <div class="pw-wrap">
+          <input class="d-in" v-model="secret" :type="showSecret ? 'text' : 'password'" placeholder="Password" autocomplete="current-password" @keyup.enter="doSignin" />
+          <button class="eye" type="button" @click="showSecret = !showSecret" :aria-label="showSecret ? 'Hide' : 'Show'">{{ showSecret ? '🙈' : '👁' }}</button>
+        </div>
         <div v-if="err" class="d-err">{{ err }}</div>
         <div class="d-actions">
           <button class="d-cancel" @click="emit('close')">Cancel</button>
@@ -101,48 +134,58 @@ function done() { emit('success'); emit('close') }
         </div>
       </template>
 
-      <!-- Sign up -->
-      <template v-else-if="mode === 'signup'">
-        <p class="d-hint">Create an account. We'll email you a code to confirm.</p>
-        <input class="d-in" v-model="username" placeholder="Username" maxlength="32" autocomplete="username" />
-        <input class="d-in" v-model="email" type="email" placeholder="Email" maxlength="254" autocomplete="email" />
-        <input class="d-in" v-model="password" type="password" placeholder="Password (8+ chars)" maxlength="128" autocomplete="new-password" />
-        <div v-if="powMsg" class="d-busy">{{ powMsg }}</div>
+      <!-- Sign up · step 1: coupon + username + email -->
+      <template v-else-if="view === 'signup' && step === 1">
+        <p class="d-hint">Create an account. Have a coupon? Enter it to use a demo identity.</p>
+        <input class="d-in" v-model="coupon" placeholder="Optional coupon" maxlength="32" @keyup.enter="nextStep" />
+        <div v-if="couponOk" class="d-note">Demo identity unlocked — no email needed.</div>
+        <input class="d-in" v-model="username" :placeholder="couponOk ? 'Name' : 'Username'" maxlength="64" autocomplete="username" @keyup.enter="nextStep" />
+        <input class="d-in" v-model="email" type="email" :placeholder="couponOk ? 'Email (optional)' : 'Email'" maxlength="254" autocomplete="email" @keyup.enter="nextStep" />
         <div v-if="err" class="d-err">{{ err }}</div>
         <div class="d-actions">
           <button class="d-cancel" @click="emit('close')">Cancel</button>
-          <button class="d-login" :disabled="busy" @click="doSignup">{{ signupBusy ? '…' : 'Create account' }}</button>
+          <button class="d-login" @click="nextStep">Next</button>
         </div>
       </template>
 
-      <!-- Verify code -->
-      <template v-else-if="mode === 'verify'">
+      <!-- Sign up · step 2: two secrets with eye toggles -->
+      <template v-else-if="view === 'signup' && step === 2">
+        <h3 class="d-title">{{ isDemo ? 'Choose a 4-digit PIN' : 'Choose a password' }}</h3>
+        <p class="d-hint">{{ isDemo ? 'Reuse your name + PIN later to find your data.' : 'At least 8 characters.' }}</p>
+        <div class="pw-wrap">
+          <input class="d-in" v-model="secret" :type="showSecret ? 'text' : 'password'"
+                 :inputmode="isDemo ? 'numeric' : 'text'" :maxlength="isDemo ? 4 : 128"
+                 :placeholder="isDemo ? '4-digit PIN' : 'Password'" autocomplete="new-password" />
+          <button class="eye" type="button" @click="showSecret = !showSecret">{{ showSecret ? '🙈' : '👁' }}</button>
+        </div>
+        <div class="pw-wrap">
+          <input class="d-in" v-model="secret2" :type="showSecret2 ? 'text' : 'password'"
+                 :inputmode="isDemo ? 'numeric' : 'text'" :maxlength="isDemo ? 4 : 128"
+                 :placeholder="isDemo ? 'Confirm PIN' : 'Confirm password'" autocomplete="new-password"
+                 @keyup.enter="finishSignup" />
+          <button class="eye" type="button" @click="showSecret2 = !showSecret2">{{ showSecret2 ? '🙈' : '👁' }}</button>
+        </div>
+        <div v-if="powMsg" class="d-busy">{{ powMsg }}</div>
+        <div v-if="err" class="d-err">{{ err }}</div>
+        <div class="d-actions">
+          <button class="d-cancel" @click="step = 1">Back</button>
+          <button class="d-login" :disabled="busy" @click="finishSignup">
+            {{ signupBusy ? '…' : (isDemo ? 'Continue' : 'Create account') }}
+          </button>
+        </div>
+      </template>
+
+      <!-- Verify code (account sign-up) -->
+      <template v-else>
         <h3 class="d-title">Confirm your email</h3>
         <p class="d-hint">{{ note || 'Enter the 6-digit code we emailed you.' }}</p>
         <input class="d-in" v-model="code" placeholder="6-digit code" inputmode="numeric" maxlength="6" @keyup.enter="doVerify" />
         <div v-if="err" class="d-err">{{ err }}</div>
         <div class="d-actions">
-          <button class="d-cancel" @click="setMode('signup')">Back</button>
+          <button class="d-cancel" @click="view = 'signup'; step = 2">Back</button>
           <button class="d-login" :disabled="busy" @click="doVerify">{{ busy ? '…' : 'Confirm' }}</button>
         </div>
       </template>
-
-      <!-- Demo identity -->
-      <template v-else>
-        <h3 class="d-title">Quick demo identity</h3>
-        <p class="d-hint">No account — a name + 4-digit number. Reuse the same pair to find your data.</p>
-        <input class="d-in" v-model="demoName" placeholder="Name" maxlength="64" @keyup.enter="doDemo" />
-        <input class="d-in" v-model="demoPin" placeholder="4-digit number" inputmode="numeric" maxlength="4" @keyup.enter="doDemo" />
-        <div v-if="err" class="d-err">{{ err }}</div>
-        <div class="d-actions">
-          <button class="d-cancel" @click="setMode('signin')">Back</button>
-          <button class="d-login" :disabled="busy" @click="doDemo">{{ busy ? '…' : 'Continue' }}</button>
-        </div>
-      </template>
-
-      <div v-if="mode === 'signin' || mode === 'signup'" class="d-foot">
-        <a href="#" @click.prevent="setMode('demo')">Use a quick demo identity instead</a>
-      </div>
     </div>
   </div>
 </template>
@@ -163,11 +206,19 @@ function done() { emit('success'); emit('close') }
 .auth-tabs button.on { background: #3b82f6; border-color: #3b82f6; color: #fff; font-weight: 600; }
 .d-title { font-size: 18px; color: #f59e0b; margin-bottom: 4px; }
 .d-hint { font-size: 12px; color: #64748b; margin-bottom: 12px; }
+.d-note { font-size: 12px; color: #34d399; margin: -2px 0 8px; }
 .d-in {
   width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
   padding: 10px 12px; border-radius: 8px; font-size: 15px; outline: none; margin-bottom: 8px;
 }
 .d-in:focus { border-color: #3b82f6; }
+.pw-wrap { position: relative; }
+.pw-wrap .d-in { padding-right: 40px; }
+.eye {
+  position: absolute; right: 8px; top: 9px; background: none; border: none;
+  cursor: pointer; font-size: 15px; line-height: 1; padding: 2px; opacity: 0.8;
+}
+.eye:hover { opacity: 1; }
 .d-err { color: #f87171; font-size: 13px; margin-bottom: 8px; }
 .d-busy { color: #60a5fa; font-size: 13px; margin-bottom: 8px; }
 .d-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
@@ -176,7 +227,4 @@ function done() { emit('success'); emit('close') }
 .d-login { background: #2563eb; border: 1px solid #2563eb; color: #fff; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
 .d-login:hover { background: #1d4ed8; }
 .d-login:disabled { opacity: 0.5; cursor: not-allowed; }
-.d-foot { margin-top: 12px; text-align: center; }
-.d-foot a { color: #64748b; font-size: 12px; text-decoration: none; }
-.d-foot a:hover { color: #94a3b8; text-decoration: underline; }
 </style>
