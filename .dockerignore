@@ -1,0 +1,35 @@
+# Keep the build context small and reproducible. Everything is rebuilt in the
+# image, so exclude local build output, deps, secrets, and VCS.
+
+.git
+.gitignore
+
+# Rust build output (rebuilt in the image)
+target
+crates/*/target
+
+# Node / frontend build output (rebuilt in the image)
+frontend/node_modules
+frontend/dist
+frontend/src/wasm
+crates/tnv-budget-tree/pkg
+crates/tnv-budget-tree/data
+
+# Secrets and local env (provide via env_file / compose instead)
+.env
+frontend/.env
+.env.docker
+
+# Data: keep budauth.csv (required), drop runtime DBs and backups
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/*.bak
+data/store.json
+
+# Test / tooling artifacts
+frontend/test-results
+frontend/playwright-report
+**/*.swp
+.DS_Store

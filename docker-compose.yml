@@ -1,0 +1,44 @@
+# TNV website — application container only.
+#
+# TLS termination, the reverse proxy (Caddy), and the shared docker network are
+# handled in a SEPARATE compose/session. This file builds and runs the app and
+# exposes it on the internal network as `app:3000` for that proxy to sit in
+# front of. See DOCKER.md for the handoff.
+#
+#   cp .env.docker.example .env.docker   # then edit the values
+#   docker compose up -d --build
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # MUST match FISCAL_YEAR in .env.docker (the SPA bakes it at build time).
+        FISCAL_YEAR: "2027"
+    image: tnv-web:latest
+    container_name: tnv-web
+    env_file: .env.docker
+    environment:
+      BIND_ADDR: "0.0.0.0:3000"
+      STATIC_DIR: "static"
+      DATA_DIR: "data"
+      # The reverse proxy terminates TLS and sets X-Forwarded-For:
+      TRUSTED_PROXY: "true"
+    # Internal only — the reverse proxy reaches it as http://app:3000.
+    expose:
+      - "3000"
+    # For local testing WITHOUT a proxy, publish to localhost only (uncomment):
+    # ports:
+    #   - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    networks:
+      - web
+
+networks:
+  web:
+    name: tnv-web
+    # If the proxy/TLS session owns the network, make it external and remove the
+    # `name`/driver here so both compose files share it:
+    #   external: true
+    driver: bridge
