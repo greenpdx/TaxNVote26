@@ -18,7 +18,8 @@ pub async fn identify(
     state.rate_limit(ip, "identify", RATE_IDENTIFY_MAX, RATE_IDENTIFY_WINDOW_SECS)
         .await.map_err(too_many)?;
 
-    // Runtime override (in addition to the ENABLE_DEMO_IDENTITY build flag).
+    // This handler only exists in the `demo` build; the admin can still toggle
+    // it off at runtime via the `demo_identity_enabled` setting.
     if !state.setting_or("demo_identity_enabled", true).await {
         return Err((StatusCode::FORBIDDEN, Json(json!({"error": "demo identity disabled"}))));
     }

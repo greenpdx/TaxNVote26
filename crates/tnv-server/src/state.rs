@@ -137,11 +137,6 @@ pub struct AppState {
     /// When true, derive the client IP from X-Forwarded-For (set by a trusted
     /// reverse proxy). When false, use the TCP peer address.
     pub trusted_proxy: bool,
-    /// When true, the demo PIN identity endpoint (/api/identify) is mounted.
-    /// Off by default; must never be enabled on a public deployment.
-    /// Routing is decided at startup; retained for the admin config layer.
-    #[allow(dead_code)]
-    pub enable_demo_identity: bool,
     pub valid_node_ids: Arc<HashSet<String>>,
     pub rate_limiter: Arc<RwLock<RateLimiter>>,
     pub challenges: Arc<RwLock<ChallengeStore>>,
@@ -163,7 +158,6 @@ impl AppState {
         fiscal_year: String,
         jwt_ttl_secs: i64,
         trusted_proxy: bool,
-        enable_demo_identity: bool,
         valid_node_ids: HashSet<String>,
         mailer: Arc<dyn Mailer>,
     ) -> Self {
@@ -175,7 +169,6 @@ impl AppState {
             fiscal_year,
             jwt_ttl_secs,
             trusted_proxy,
-            enable_demo_identity,
             valid_node_ids: Arc::new(valid_node_ids),
             rate_limiter: Arc::new(RwLock::new(RateLimiter::new())),
             challenges: Arc::new(RwLock::new(ChallengeStore::new())),
@@ -204,6 +197,14 @@ impl AppState {
         match self.settings.read().await.get(key) {
             Some(v) => matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
             None => default,
+        }
+    }
+
+    /// Get a string setting, falling back to `default` when unset or blank.
+    pub async fn setting_str(&self, key: &str, default: &str) -> String {
+        match self.settings.read().await.get(key) {
+            Some(v) if !v.trim().is_empty() => v.clone(),
+            _ => default.to_string(),
         }
     }
 

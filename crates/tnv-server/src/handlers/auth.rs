@@ -5,10 +5,12 @@ use crate::auth::*;
 use crate::extract::ClientIp;
 use crate::models::*;
 use crate::state::*;
+#[cfg(feature = "full")]
 use crate::validation::{validate_registration, verify_pow};
 
 // ─── GET /api/auth/challenge ─────────────────────────────────────
 
+#[cfg(feature = "full")]
 pub async fn challenge(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
@@ -26,6 +28,7 @@ pub async fn challenge(
 
 // ─── POST /api/auth/register ─────────────────────────────────────
 
+#[cfg(feature = "full")]
 pub async fn register(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
@@ -116,6 +119,7 @@ pub async fn register(
 
 // ─── POST /api/auth/verify ───────────────────────────────────────
 
+#[cfg(feature = "full")]
 pub async fn verify(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,

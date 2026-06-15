@@ -7,6 +7,7 @@ use std::collections::HashSet;
 // ─── Proof-of-Work verification ──────────────────────────────────
 
 /// Verify that SHA-256(challenge + nonce) has `difficulty` leading zero bits.
+#[cfg(feature = "full")]
 pub fn verify_pow(challenge: &str, nonce: &str, difficulty: u32) -> bool {
     let mut hasher = Sha256::new();
     hasher.update(challenge.as_bytes());
@@ -87,6 +88,7 @@ pub fn compute_td_checksum(allocations: &[Allocation]) -> String {
 }
 
 /// Validate registration inputs.
+#[cfg(feature = "full")]
 pub fn validate_registration(req: &RegisterRequest) -> Result<(), String> {
     if req.username.len() < USERNAME_MIN || req.username.len() > USERNAME_MAX {
         return Err(format!("username must be {}-{} chars", USERNAME_MIN, USERNAME_MAX));
@@ -133,6 +135,7 @@ mod tests {
         assert_eq!(compute_td_checksum(&a), compute_td_checksum(&b));
     }
 
+    #[cfg(feature = "full")]
     fn reg(username: &str, email: &str, password: &str) -> RegisterRequest {
         RegisterRequest {
             username: username.into(), email: email.into(), password: password.into(),
@@ -140,36 +143,43 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_validate_registration_good() {
         assert!(validate_registration(&reg("shaun", "x@y.com", "12345678")).is_ok());
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_validate_registration_short_username() {
         assert!(validate_registration(&reg("ab", "x@y.com", "12345678")).is_err());
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_validate_registration_short_password() {
         assert!(validate_registration(&reg("shaun", "x@y.com", "short")).is_err());
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_validate_registration_email_too_short() {
         assert!(validate_registration(&reg("shaun", "a@b", "12345678")).is_err());
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_validate_registration_username_too_long() {
         assert!(validate_registration(&reg(&"a".repeat(33), "x@y.com", "12345678")).is_err());
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_validate_registration_bad_username_chars() {
         assert!(validate_registration(&reg("ha ha spaces", "x@y.com", "12345678")).is_err());
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_validate_registration_password_too_long() {
         assert!(validate_registration(&reg("shaun", "x@y.com", &"p".repeat(129))).is_err());
@@ -177,6 +187,7 @@ mod tests {
 
     // ─── PoW tests ───────────────────────────────────────────────
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_pow_valid_solution() {
         // Brute-force a solution with low difficulty for testing
@@ -195,11 +206,13 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_pow_invalid_solution() {
         assert!(!verify_pow("challenge", "wrong_nonce_unlikely", 20));
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_pow_zero_difficulty() {
         // Difficulty 0 = everything passes

@@ -5,6 +5,13 @@
 #
 #   docker build -t tnv-web:latest .
 #   docker build --build-arg FISCAL_YEAR=2027 -t tnv-web:latest .
+#   docker build --build-arg VARIANT=demo -t tnv-demo:latest .   # conference build
+#
+# VARIANT selects the build flavor (default `full`):
+#   full — email/password registration + login (permanent public site)
+#   demo — name + 4-digit PIN identity (admin email login still available)
+# It drives BOTH the server's cargo features and the SPA's VITE_AUTH_MODE so the
+# two halves can never disagree.
 #
 # TLS / reverse proxy / docker network are handled separately (see DOCKER.md);
 # this image listens on plain HTTP :3000 and expects a proxy (e.g. Caddy) in front.
@@ -28,12 +35,21 @@ COPY . .
 ARG FISCAL_YEAR=2027
 ENV VITE_FISCAL_YEAR=${FISCAL_YEAR}
 
+# Build flavor (full|demo) — drives both the SPA auth UI and the server features.
+ARG VARIANT=full
+ENV VITE_AUTH_MODE=${VARIANT}
+
 # Build the SPA (wasm-pack + vue-tsc + vite) → frontend/dist.
 # npm install (not ci): the lockfile is intentionally not committed.
 RUN cd frontend && npm install && npm run build
 
-# Build the release server binary.
-RUN cargo build --release -p tnv-server
+# Build the release server binary for the selected variant. `full` is the cargo
+# default; `demo` swaps the registration routes for name+PIN identity.
+RUN if [ "$VARIANT" = "demo" ]; then \
+        cargo build --release -p tnv-server --no-default-features --features demo; \
+    else \
+        cargo build --release -p tnv-server; \
+    fi
 
 # ─────────────────────────── runtime ───────────────────────────
 FROM debian:bookworm-slim AS runtime

@@ -15,7 +15,7 @@ test('view-my-submission loads the saved data and stays signed in', async ({ pag
   const dialog = page.locator('.dialog')
   await expect(dialog).toBeVisible()
   await dialog.getByPlaceholder('Name').fill(name)
-  await dialog.getByPlaceholder('4-digit number').fill(pin)
+  await dialog.getByPlaceholder('4-digit PIN').fill(pin)
   await dialog.locator('.d-login').click()
   await expect(page.getByText(/Submitted ✓/)).toBeVisible({ timeout: 10000 })
   // Submit auto-logged us out and reset the tree.
@@ -25,7 +25,7 @@ test('view-my-submission loads the saved data and stays signed in', async ({ pag
   await page.getByRole('button', { name: 'View my submission' }).click()
   await expect(dialog).toBeVisible()
   await dialog.getByPlaceholder('Name').fill(name)
-  await dialog.getByPlaceholder('4-digit number').fill(pin)
+  await dialog.getByPlaceholder('4-digit PIN').fill(pin)
   await dialog.locator('.d-login').click()
 
   // 3. Saved allocation loads and we stay signed in (so we can see it).

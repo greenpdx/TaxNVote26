@@ -30,6 +30,7 @@ data/*.db-shm
 .env
 frontend/.env
 .env.docker
+.env.docker.demo
 
 # Prebuilt docker package artifacts (large; rebuilt from source / shipped as a tarball)
 docker-pkg/tnv-server

@@ -7,9 +7,12 @@ use serde::{Deserialize, Serialize};
 
 pub const USERNAME_MIN: usize = 3;
 pub const USERNAME_MAX: usize = 32;
+#[cfg(feature = "full")]
 pub const EMAIL_MIN: usize = 5;
+#[cfg(feature = "full")]
 pub const EMAIL_MAX: usize = 254;
 pub const PASSWORD_MIN: usize = 8;
+#[cfg(feature = "full")]
 pub const PASSWORD_MAX: usize = 128;
 pub const TPL_NAME_MIN: usize = 3;
 pub const TPL_NAME_MAX: usize = 128;
@@ -23,19 +26,28 @@ pub const CHECKSUM_LEN: usize = 71; // "sha256:" + 64 hex
 
 // ─── Anti-automation ─────────────────────────────────────────────
 
+#[cfg(feature = "full")]
 pub const POW_DIFFICULTY: u32 = 20;          // leading zero bits in SHA-256
 pub const CHALLENGE_TTL_SECS: u64 = 300;     // 5 min
 pub const CHALLENGE_LEN: usize = 32;         // hex chars in challenge string
 
+#[cfg(feature = "full")]
 pub const RATE_REGISTER_MAX: usize = 3;
+#[cfg(feature = "full")]
 pub const RATE_REGISTER_WINDOW_SECS: u64 = 900;  // 15 min
 pub const RATE_LOGIN_MAX: usize = 10;
 pub const RATE_LOGIN_WINDOW_SECS: u64 = 900;
+#[cfg(feature = "full")]
 pub const RATE_VERIFY_MAX: usize = 10;
+#[cfg(feature = "full")]
 pub const RATE_VERIFY_WINDOW_SECS: u64 = 900;
+#[cfg(feature = "full")]
 pub const RATE_CHALLENGE_MAX: usize = 30;
+#[cfg(feature = "full")]
 pub const RATE_CHALLENGE_WINDOW_SECS: u64 = 900;
+#[cfg(feature = "demo")]
 pub const RATE_IDENTIFY_MAX: usize = 5;
+#[cfg(feature = "demo")]
 pub const RATE_IDENTIFY_WINDOW_SECS: u64 = 900;
 pub const RATE_AGGREGATE_MAX: usize = 60;
 pub const RATE_AGGREGATE_WINDOW_SECS: u64 = 60;
@@ -48,10 +60,12 @@ pub const RATE_VIEW_MAX: usize = 20;
 pub const RATE_VIEW_WINDOW_SECS: u64 = 60;
 
 /// Max failed verification-code attempts before the pending row is burned.
+#[cfg(feature = "full")]
 pub const MAX_VERIFY_ATTEMPTS: i64 = 5;
 
 // ─── Auth ─────────────────────────────────────────────────────────
 
+#[cfg(feature = "full")]
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
     pub username: String,
@@ -61,6 +75,7 @@ pub struct RegisterRequest {
     pub nonce: String,
 }
 
+#[cfg(feature = "full")]
 #[derive(Debug, Serialize)]
 pub struct ChallengeResponse {
     pub challenge: String,
@@ -68,6 +83,7 @@ pub struct ChallengeResponse {
     pub expires_in_secs: u64,
 }
 
+#[cfg(feature = "full")]
 #[derive(Debug, Deserialize)]
 pub struct VerifyRequest {
     pub email: String,
@@ -82,10 +98,14 @@ pub struct LoginRequest {
 
 // ─── Demo identity: name + 4-digit secret ────────────────────────
 
+#[cfg(feature = "demo")]
 pub const PIN_LEN: usize = 4;
+#[cfg(feature = "demo")]
 pub const PERSON_NAME_MIN: usize = 1;
+#[cfg(feature = "demo")]
 pub const PERSON_NAME_MAX: usize = 64;
 
+#[cfg(feature = "demo")]
 #[derive(Debug, Deserialize)]
 pub struct IdentifyRequest {
     pub name: String,
@@ -315,4 +335,12 @@ pub struct SetSettingRequest {
 /// Editable runtime settings (allowlist — never exposes secrets).
 /// `data_public`: when on, submitted Tax Dollars are viewable by their public
 /// link without an access PIN (the post-release-date state).
-pub const SETTING_KEYS: &[&str] = &["registration_open", "demo_identity_enabled", "maintenance_mode", "data_public"];
+pub const SETTING_KEYS: &[&str] = &[
+    "registration_open", "demo_identity_enabled", "maintenance_mode", "data_public",
+    // Free-text header subtitles, shown publicly via /api/config/public.
+    "subtitle_1", "subtitle_2",
+];
+
+/// Default header subtitles when the admin hasn't set them.
+pub const DEFAULT_SUBTITLE_1: &str = "Your Tax Dollar, Your Voice";
+pub const DEFAULT_SUBTITLE_2: &str = "";

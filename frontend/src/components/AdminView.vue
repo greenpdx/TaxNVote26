@@ -75,6 +75,9 @@ async function toggleTplHidden(t: api.AdminTemplate) {
 async function saveSetting(s: api.SettingItem, value: string) {
   try { await api.adminSetConfig(tok(), s.key, value); flash(`${s.key} = ${value || '(unset)'}`); await load() } catch (e) { fail(e) }
 }
+// Free-text settings render as a text input; everything else is a boolean toggle.
+const STRING_KEYS = new Set(['subtitle_1', 'subtitle_2'])
+const isStringKey = (key: string) => STRING_KEYS.has(key)
 </script>
 
 <template>
@@ -197,7 +200,10 @@ async function saveSetting(s: api.SettingItem, value: string) {
           <tr v-for="s in config" :key="s.key">
             <td>{{ s.key }}</td>
             <td>
-              <select :value="s.value || 'false'" @change="saveSetting(s, ($event.target as HTMLSelectElement).value)">
+              <input v-if="isStringKey(s.key)" class="cfg-text" type="text" maxlength="256"
+                     :value="s.value" placeholder="(unset)"
+                     @change="saveSetting(s, ($event.target as HTMLInputElement).value)" />
+              <select v-else :value="s.value || 'false'" @change="saveSetting(s, ($event.target as HTMLSelectElement).value)">
                 <option value="true">true</option><option value="false">false</option>
               </select>
             </td>
@@ -217,6 +223,8 @@ async function saveSetting(s: api.SettingItem, value: string) {
 .subtabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
 .subtabs button { background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 5px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .subtabs button.active { background: #3b82f6; border-color: #3b82f6; color: #fff; font-weight: 600; }
+.cfg-text { width: 22em; max-width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 5px 8px; border-radius: 6px; font-size: 13px; }
+.cfg-text:focus { outline: none; border-color: #3b82f6; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th { text-align: left; color: #64748b; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid #1e293b; }
 .tbl td { padding: 6px 8px; border-bottom: 1px solid #1e293b; vertical-align: middle; }

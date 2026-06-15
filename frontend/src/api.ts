@@ -72,6 +72,15 @@ export async function identify(name: string, secret: string): Promise<{ token: s
   return res.json()
 }
 
+export interface PublicConfig { subtitle_1: string; subtitle_2: string }
+
+/** Public, unauthenticated runtime config (header subtitles). */
+export async function getPublicConfig(): Promise<PublicConfig> {
+  const res = await fetch(`${BASE}/config/public`)
+  if (!res.ok) return asError(res)
+  return res.json()
+}
+
 export interface MeResponse { id: number; username: string; tier: number; created_at: string }
 
 export async function login(email: string, password: string): Promise<{ token: string; username: string }> {

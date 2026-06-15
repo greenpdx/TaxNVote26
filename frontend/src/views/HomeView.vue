@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useBudgetStore } from '../stores/budget'
 import { useSessionStore } from '../stores/session'
 import NodeRow from '../components/NodeRow.vue'
@@ -11,11 +11,22 @@ import HelpDialog from '../components/HelpDialog.vue'
 import ReceiptDialog from '../components/ReceiptDialog.vue'
 import {
   buildTaxDollarCsv, submitTaxDollar, buildTemplateCsv, createTemplate,
-  myTaxDollars, parseTemplateEntries,
+  myTaxDollars, parseTemplateEntries, getPublicConfig,
 } from '../api'
 
 const store = useBudgetStore()
 const session = useSessionStore()
+
+// Admin-configurable header subtitles (fetched publicly; defaults until loaded).
+const subtitle1 = ref('Your Tax Dollar, Your Voice')
+const subtitle2 = ref('')
+onMounted(async () => {
+  try {
+    const cfg = await getPublicConfig()
+    subtitle1.value = cfg.subtitle_1
+    subtitle2.value = cfg.subtitle_2
+  } catch { /* keep defaults if the config endpoint is unreachable */ }
+})
 
 type View = 'budget' | 'templates' | 'results' | 'admin'
 const view = ref<View>('budget')
@@ -128,7 +139,10 @@ async function loadMine() {
       <div class="header-top">
         <div class="title-group">
           <h1 class="title">Tax N Vote</h1>
-          <span class="subtitle">Your Tax Dollar, Your Voice</span>
+          <div class="subtitle-row">
+            <span class="subtitle">{{ subtitle1 }}</span>
+            <span v-if="subtitle2" class="subtitle subtitle-2">{{ subtitle2 }}</span>
+          </div>
         </div>
         <div class="id-widget">
           <template v-if="session.isIdentified">

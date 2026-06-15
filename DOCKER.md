@@ -39,12 +39,98 @@ For a quick local check without a proxy, uncomment the `ports:` block in
 | `FISCAL_YEAR` | 4-digit year — **must equal** the `FISCAL_YEAR` build arg |
 | `BOOTSTRAP_ADMIN_EMAIL` | An already-registered account to promote to admin on start |
 | `SMTP_*` | Email delivery for registration codes (empty `SMTP_HOST` = log-only) |
-| `ENABLE_DEMO_IDENTITY` | Keep `false` in production |
 | `ALLOWED_ORIGINS` | Leave empty for same-origin; set only for a cross-origin frontend |
 
 > **Fiscal year:** the SPA bakes `VITE_FISCAL_YEAR` at build time. If you change
 > `FISCAL_YEAR`, rebuild with `--build-arg FISCAL_YEAR=YYYY` (and the compose
 > `args.FISCAL_YEAR`) so the frontend and server agree.
+
+## Build variant: `full` vs `demo`
+
+The image is built in one of two flavors, selected by the `VARIANT` build arg
+(default `full`). It compiles a single source two ways — the SPA and the server
+are always kept in sync because `VARIANT` drives both halves:
+
+| Variant | Public sign-in | Registration | Use |
+|---------|----------------|--------------|-----|
+| `full` (default) | Email + password | Self-service (email verification) | Permanent public site |
+| `demo` | Name + 4-digit PIN | None (find-or-create on sign-in) | Conference; admin still logs in by email |
+
+The permanent site uses `docker-compose.yml` (image `tnv-web`). The conference
+build uses `docker-compose.demo.yml` (image `tnv-demo`) and runs only while the
+conference is on; the two are independent and can run side by side (give them
+separate databases):
+
+```sh
+cp .env.docker.demo.example .env.docker.demo   # then edit
+docker compose -f docker-compose.demo.yml up -d --build
+```
+
+To build the demo image by hand: `docker build --build-arg VARIANT=demo -t tnv-demo:latest .`
+
+## Transferring to a host
+
+Three ways to get the two images (`tnv-web`, `tnv-demo`) onto a deployment host.
+The images are self-contained, but the compose + `.env.docker*` files are not —
+copy those separately whichever option you pick.
+
+### A — `docker save` → SSH → `docker load` (no registry)
+
+Best for a one-off transfer. Build locally, then stream both images over SSH:
+
+```sh
+docker build --build-arg VARIANT=full -t tnv-web:latest  .
+docker build --build-arg VARIANT=demo -t tnv-demo:latest .
+
+docker save tnv-web:latest tnv-demo:latest | gzip | \
+  ssh user@host 'gunzip | docker load'
+
+# ship compose + your real (non-.example) env files
+scp docker-compose.yml docker-compose.demo.yml user@host:/opt/tnv/
+scp .env.docker .env.docker.demo user@host:/opt/tnv/
+```
+
+On the host, use `--no-build` so compose uses the loaded images instead of
+rebuilding (both compose files carry a `build:` section):
+
+```sh
+cd /opt/tnv
+docker compose up -d --no-build
+docker compose -f docker-compose.demo.yml up -d --no-build
+```
+
+### B — Build on the host from source
+
+Skip image transfer; build where it runs. The host needs the Rust+Node build
+layers (slower first build, more disk), but it's reproducible from git:
+
+```sh
+git clone <repo> /opt/tnv && cd /opt/tnv
+cp .env.docker.example .env.docker            # edit
+cp .env.docker.demo.example .env.docker.demo  # edit
+docker compose up -d --build
+docker compose -f docker-compose.demo.yml up -d --build
+```
+
+### C — Registry (repeated deploys / multiple hosts / CI)
+
+```sh
+docker tag  tnv-web:latest  registry.example.com/tnv-web:latest
+docker tag  tnv-demo:latest registry.example.com/tnv-demo:latest
+docker push registry.example.com/tnv-web:latest
+docker push registry.example.com/tnv-demo:latest
+```
+
+Point each compose file's `image:` at the registry path, `docker login` on the
+host, then `docker compose pull && docker compose up -d`.
+
+> **Watch out:**
+> - The two builds need **separate Postgres databases** (the demo env already
+>   points at `tnv_demo`) so conference submissions never mix with real data.
+> - `FISCAL_YEAR` is **baked into the SPA at build time.** With option A (save/load)
+>   it's already fixed — don't change it on the host without rebuilding.
+> - TLS/reverse proxy is separate (see the handoff below); both containers only
+>   `expose` `:3000` internally.
 
 ## What's in the image
 
