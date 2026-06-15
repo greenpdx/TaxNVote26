@@ -3,7 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import { useBudgetStore } from './stores/budget'
 import { useSessionStore } from './stores/session'
 import NodeRow from './components/NodeRow.vue'
-import LoginDialog from './components/LoginDialog.vue'
+import AuthDialog from './components/AuthDialog.vue'
 import TemplatesView from './components/TemplatesView.vue'
 import ResultsView from './components/ResultsView.vue'
 import AdminView from './components/AdminView.vue'
@@ -59,7 +59,7 @@ function toggleBarScale() { store.barScale = store.barScale === 'linear' ? 'log'
 function flash(text: string, isErr = false) { msg.value = text; msgErr.value = isErr }
 
 async function submit() {
-  if (!session.isIdentified) { flash('Identify first (name + 4-digit PIN).', true); return }
+  if (!session.isIdentified) { flash('Sign in first.', true); return }
   busy.value = true
   try {
     const csv = await buildTaxDollarCsv(store.leafAllocations(), store.fiscalYear, 'default')
@@ -72,7 +72,7 @@ async function submit() {
 }
 
 async function saveTemplate() {
-  if (!session.isIdentified) { flash('Identify first (name + 4-digit PIN).', true); return }
+  if (!session.isIdentified) { flash('Sign in first.', true); return }
   if (saveName.value.trim().length < 3) { flash('Template name must be ≥3 chars.', true); return }
   busy.value = true
   try {
@@ -89,7 +89,7 @@ async function saveTemplate() {
 }
 
 async function loadMine() {
-  if (!session.isIdentified) { flash('Identify first (name + 4-digit PIN).', true); return }
+  if (!session.isIdentified) { flash('Sign in first.', true); return }
   busy.value = true
   try {
     const mine = await myTaxDollars(session.token!)
@@ -110,7 +110,7 @@ async function loadMine() {
 
 <template>
   <div class="app">
-    <LoginDialog :open="showLogin" @close="showLogin = false" @success="onLoginSuccess" />
+    <AuthDialog :open="showLogin" @close="showLogin = false" @success="onLoginSuccess" />
     <header class="header">
       <div class="header-top">
         <div class="title-group">

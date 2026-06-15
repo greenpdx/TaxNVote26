@@ -88,6 +88,61 @@ export async function me(token: string): Promise<MeResponse> {
   return res.json()
 }
 
+export interface ChallengeResponse { challenge: string; difficulty: number; expires_in_secs: number }
+
+export async function getChallenge(): Promise<ChallengeResponse> {
+  const res = await fetch(`${BASE}/auth/challenge`)
+  if (!res.ok) return asError(res)
+  return res.json()
+}
+
+export async function register(
+  username: string, email: string, password: string, challenge: string, nonce: string,
+): Promise<{ message: string; email: string }> {
+  const res = await fetch(`${BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, email, password, challenge, nonce }),
+  })
+  if (!res.ok) return asError(res)
+  return res.json()
+}
+
+export async function verifyEmail(email: string, code: string): Promise<{ token: string; username: string }> {
+  const res = await fetch(`${BASE}/auth/verify`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  })
+  if (!res.ok) return asError(res)
+  return res.json()
+}
+
+/** Solve the registration proof-of-work: find a nonce so that
+ *  SHA-256(challenge + nonce) has `difficulty` leading zero bits. Uses the
+ *  pure-JS SHA-256 in yield-friendly chunks (works on non-secure origins). */
+export async function solvePow(
+  challenge: string, difficulty: number, onProgress?: (tried: number) => void,
+): Promise<string> {
+  const fullZeros = Math.floor(difficulty / 4)
+  const remBits = difficulty % 4
+  const prefix = '0'.repeat(fullZeros)
+  const maxNibble = remBits === 0 ? 16 : 1 << (4 - remBits)
+  const ok = (h: string) =>
+    h.startsWith(prefix) && (remBits === 0 || parseInt(h[fullZeros], 16) < maxNibble)
+
+  let nonce = 0
+  const CHUNK = 1000
+  for (;;) {
+    for (let i = 0; i < CHUNK; i++) {
+      if (ok(sha256Fallback(challenge + nonce))) return String(nonce)
+      nonce++
+    }
+    onProgress?.(nonce)
+    await new Promise((r) => setTimeout(r)) // yield to keep the UI responsive
+  }
+}
+
 // ─── Templates ─────────────────────────────────────────────────
 export async function listTemplates(): Promise<TemplateSummary[]> {
   const res = await fetch(`${BASE}/templates`)

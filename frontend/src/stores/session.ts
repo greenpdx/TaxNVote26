@@ -29,10 +29,42 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  async function loginEmail(email: string, password: string) {
+    error.value = null
+    busy.value = true
+    try {
+      const res = await api.login(email, password)
+      token.value = res.token
+      name.value = res.username
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      return false
+    } finally {
+      busy.value = false
+    }
+  }
+
+  async function verifyEmail(email: string, code: string) {
+    error.value = null
+    busy.value = true
+    try {
+      const res = await api.verifyEmail(email, code)
+      token.value = res.token
+      name.value = res.username
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      return false
+    } finally {
+      busy.value = false
+    }
+  }
+
   function logout() {
     token.value = null
     name.value = null
   }
 
-  return { token, name, error, busy, isIdentified, identify, logout }
+  return { token, name, error, busy, isIdentified, identify, loginEmail, verifyEmail, logout }
 })
