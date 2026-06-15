@@ -51,7 +51,7 @@ onMounted(async () => { await store.init() })
 // Logout (manual, or auto after submit) returns the budget to defaults —
 // a clean slate for the next person.
 watch(() => session.isIdentified, (now, was) => {
-  if (was && !now) store.resetAll()
+  if (was && !now) { store.resetAll(); msg.value = null }
 })
 
 // Leave the admin view when the session is no longer an admin.
