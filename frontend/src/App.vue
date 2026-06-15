@@ -155,10 +155,10 @@ async function loadMine() {
         </div>
       </div>
 
-      <div class="actbar">
-        <button class="primary" :disabled="busy" @click="requireLogin(submit)">Submit my Tax Dollar</button>
+      <div v-if="session.isIdentified" class="actbar">
+        <button class="primary" :disabled="busy" @click="submit">Submit my Tax Dollar</button>
         <button class="ghost" :disabled="busy" @click="toggleSave">Save as template</button>
-        <button class="ghost" :disabled="busy" @click="requireLogin(loadMine)">View my submission</button>
+        <button class="ghost" :disabled="busy" @click="loadMine">View my submission</button>
       </div>
 
       <div v-if="saveOpen" class="saveform">
