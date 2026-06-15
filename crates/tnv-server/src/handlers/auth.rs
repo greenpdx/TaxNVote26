@@ -34,6 +34,11 @@ pub async fn register(
     state.rate_limit(ip, "register", RATE_REGISTER_MAX, RATE_REGISTER_WINDOW_SECS)
         .await.map_err(too_many)?;
 
+    // Admins can close registration at runtime via the `registration_open` setting.
+    if !state.setting_or("registration_open", true).await {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "registration is closed"}))));
+    }
+
     validate_registration(&req).map_err(bad)?;
 
     // Verify the PoW math FIRST so a wrong nonce can't burn a valid challenge,

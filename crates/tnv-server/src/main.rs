@@ -92,6 +92,9 @@ async fn run() -> Result<(), String> {
     let max_concurrent: usize = std::env::var("MAX_CONCURRENT_REQUESTS").ok()
         .and_then(|s| s.parse().ok()).filter(|n| *n > 0).unwrap_or(1024);
 
+    // Directory of the built SPA (vite `dist/` copied here for production).
+    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".into());
+
     // ─── Filesystem prep (sqlite needs parent dir to exist) ──────
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("create data_dir {data_dir}: {e}"))?;
@@ -196,21 +199,30 @@ async fn run() -> Result<(), String> {
         .layer(acl::admin_layer(state.jwt_secret.clone()));
     api = api.nest("/admin", admin);
 
-    let static_service = ServeDir::new("static")
-        .not_found_service(ServeFile::new("static/index.html"));
+    // Serve the built SPA, falling back to index.html for client-side routes.
+    let static_service = ServeDir::new(&static_dir)
+        .not_found_service(ServeFile::new(format!("{static_dir}/index.html")));
 
-    let app = Router::new()
+    // CORS: the SPA is served same-origin (directly, or via Caddy in front), so
+    // no CORS is needed by default. Set ALLOWED_ORIGINS (comma-separated) only
+    // for a genuinely cross-origin frontend; never fall back to permissive.
+    let cors = build_cors();
+
+    let mut app = Router::new()
         .nest("/api", api)
         .fallback_service(static_service)
-        .layer(CorsLayer::permissive())
         .layer(DefaultBodyLimit::max(1024 * 1024)) // 1 MB
         // Cap how long any request may run (slow-loris / hung-handler defense).
-        .layer(tower_http::timeout::TimeoutLayer::new(
+        .layer(tower_http::timeout::TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
             std::time::Duration::from_secs(request_timeout_secs)))
         // Bound total in-flight requests so a burst can't exhaust resources.
         .layer(tower::limit::GlobalConcurrencyLimitLayer::new(max_concurrent))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .layer(TraceLayer::new_for_http());
+    if let Some(cors) = cors {
+        app = app.layer(cors);
+    }
+    let app = app.with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await
         .map_err(|e| format!("bind {bind_addr}: {e}"))?;
@@ -289,6 +301,30 @@ async fn bootstrap_admin(state: &AppState) -> Result<(), String> {
         tracing::info!("BOOTSTRAP_ADMIN_EMAIL set; no matching non-admin account yet for {email}");
     }
     Ok(())
+}
+
+/// Build a CORS layer from ALLOWED_ORIGINS (comma-separated). Returns None when
+/// unset — the default is same-origin (no CORS), never permissive.
+fn build_cors() -> Option<CorsLayer> {
+    use axum::http::{header, HeaderValue, Method};
+    let raw = std::env::var("ALLOWED_ORIGINS").unwrap_or_default();
+    let origins: Vec<HeaderValue> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter_map(|o| o.parse::<HeaderValue>().ok())
+        .collect();
+    if origins.is_empty() {
+        tracing::info!("CORS disabled (same-origin); set ALLOWED_ORIGINS to allow a cross-origin frontend");
+        return None;
+    }
+    tracing::info!("CORS enabled for {} origin(s)", origins.len());
+    Some(
+        CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods([Method::GET, Method::POST, Method::PUT])
+            .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]),
+    )
 }
 
 /// Read a boolean env var. Accepts 1/true/yes/on (case-insensitive) as true.

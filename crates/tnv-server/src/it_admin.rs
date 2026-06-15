@@ -107,7 +107,7 @@ async fn admin_can_list_users_and_disable() {
     assert_eq!(users.len(), 2);
 
     // Disable the person, then the subject is reported disabled (immediate).
-    admin::disable_user(
+    let _ = admin::disable_user(
         State(state.clone()),
         ip(),
         admin,
@@ -132,7 +132,7 @@ async fn config_set_is_audited_and_visible() {
     let state = test_state().await;
     let admin_id = seed_account(&state, "boss", &"c".repeat(64), ADMIN_TIER).await;
 
-    admin::set_config(
+    let _ = admin::set_config(
         State(state.clone()),
         ip(),
         claims(admin_id, SUBJECT_ACCOUNT, ADMIN_TIER),
