@@ -54,6 +54,11 @@ watch(() => session.isIdentified, (now, was) => {
   if (was && !now) store.resetAll()
 })
 
+// Leave the admin view when the session is no longer an admin.
+watch(() => session.isAdmin, (admin) => {
+  if (!admin && view.value === 'admin') view.value = 'budget'
+})
+
 function toggleMode() { store.mode = store.mode === 'simple' ? 'full' : 'simple' }
 function toggleBarScale() { store.barScale = store.barScale === 'linear' ? 'log' : 'linear' }
 function flash(text: string, isErr = false) { msg.value = text; msgErr.value = isErr }
@@ -130,7 +135,7 @@ async function loadMine() {
         <button :class="{ active: view === 'budget' }" @click="view = 'budget'">Budget</button>
         <button :class="{ active: view === 'templates' }" @click="view = 'templates'">Templates</button>
         <button :class="{ active: view === 'results' }" @click="view = 'results'">Results</button>
-        <button :class="{ active: view === 'admin' }" @click="view = 'admin'">Admin</button>
+        <button v-if="session.isAdmin" :class="{ active: view === 'admin' }" @click="view = 'admin'">Admin</button>
       </nav>
 
       <div v-if="msg" class="flash" :class="{ err: msgErr }" @click="msg = null">{{ msg }}</div>
