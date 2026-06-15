@@ -81,7 +81,7 @@ async function saveTemplate() {
   if (saveName.value.trim().length < 3) { flash('Template name must be ≥3 chars.', true); return }
   busy.value = true
   try {
-    const csv = buildTemplateCsv(store.leafEntries(), {
+    const csv = buildTemplateCsv(store.leafAllocations(), {
       name: saveName.value.trim(), entity: saveEntity.value.trim(),
       description: saveDesc.value.trim(), fiscalYear: store.fiscalYear,
     })

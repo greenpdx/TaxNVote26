@@ -28,7 +28,9 @@ async function loadTemplate(t: TemplateSummary) {
   msg.value = null
   try {
     const csv = await getTemplateCsv(t.receipt_no)
-    store.applyTemplateEntries(parseTemplateEntries(csv))
+    // Stored as percentages → derive dollar values for the current total.
+    const total = store.totalValue
+    store.applyTemplateEntries(parseTemplateEntries(csv).map(e => ({ id: e.id, value: e.value * total })))
     msg.value = `Loaded "${t.name}" into the budget.`
     emit('loaded')
   } catch (e) {

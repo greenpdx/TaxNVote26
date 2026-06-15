@@ -162,7 +162,7 @@ async function saveSetting(s: api.SettingItem, value: string) {
             <tr v-if="openKey === t.receipt_no">
               <td colspan="5" class="rollup-cell">
                 <div v-if="rollupBusy" class="muted">Loading…</div>
-                <RollupRow v-else v-for="n in rollup" :key="n.id" :node="n" :name-of="nameOf" />
+                <RollupRow v-else v-for="n in rollup" :key="n.id" :node="n" :name-of="nameOf" :fmt="(a: number) => budget.formatDollars(a * budget.totalValue)" />
                 <div v-if="!rollupBusy && rollup.length === 0" class="muted">No entries.</div>
               </td>
             </tr>

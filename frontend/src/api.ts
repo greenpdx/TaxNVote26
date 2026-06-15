@@ -295,17 +295,19 @@ export async function buildTaxDollarCsv(
   return lines.join('\n') + '\n'
 }
 
-/** Build a #TNV-TEMPLATE CSV (entries are dollar values). */
+/** Build a #TNV-TEMPLATE CSV. Entries are stored as PERCENTAGES (fractions of
+ *  the total); the dollar amount is derived later as pct × total, so a template
+ *  is a fiscal-year-independent plan of proportions. */
 export function buildTemplateCsv(
-  entries: Entry[],
+  allocs: Alloc[],
   meta: { name: string; entity: string; description: string; fiscalYear: string },
 ): string {
   const lines = ['#TNV-TEMPLATE', `#name,${meta.name}`]
   if (meta.entity) lines.push(`#entity,${meta.entity}`)
   if (meta.description) lines.push(`#description,${meta.description}`)
   lines.push(`#fiscal_year,${meta.fiscalYear}`)
-  lines.push('id,value')
-  for (const e of entries) lines.push(`${e.id},${Math.round(e.value)}`)
+  lines.push('id,pct')
+  for (const a of allocs) if (a.pct > 0) lines.push(`${a.id},${a.pct.toFixed(6)}`)
   return lines.join('\n') + '\n'
 }
 

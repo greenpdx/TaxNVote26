@@ -35,10 +35,11 @@ pub fn parse_template_csv(raw: &str) -> Result<ParsedTemplate, String> {
         }
 
         if !found_header {
-            // Expect "id,value"
+            // Templates store percentages (fractions of the total); the dollar
+            // amount is derived as pct × total at display/load time.
             let lower = line.to_lowercase().replace(' ', "");
-            if lower != "id,value" {
-                return Err(format!("expected header 'id,value', got '{}'", line));
+            if lower != "id,pct" {
+                return Err(format!("expected header 'id,pct', got '{}'", line));
             }
             found_header = true;
             continue;
@@ -48,7 +49,7 @@ pub fn parse_template_csv(raw: &str) -> Result<ParsedTemplate, String> {
     }
 
     if !found_header {
-        return Err("missing header line 'id,value'".into());
+        return Err("missing header line 'id,pct'".into());
     }
 
     let name = meta.get("name").cloned().ok_or("missing #name metadata")?;
@@ -240,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_parse_valid_template() {
-        let csv = "#TNV-TEMPLATE\n#name,Test Budget\n#fiscal_year,2021\nid,value\na:010,500000\na:020,150000\n";
+        let csv = "#TNV-TEMPLATE\n#name,Test Budget\n#fiscal_year,2021\nid,pct\na:010,500000\na:020,150000\n";
         let t = parse_template_csv(csv).unwrap();
         assert_eq!(t.name, "Test Budget");
         assert_eq!(t.fiscal_year, "2021");
@@ -249,26 +250,26 @@ mod tests {
 
     #[test]
     fn test_template_missing_magic() {
-        let csv = "#name,Test\n#fiscal_year,2021\nid,value\na:010,500000\n";
+        let csv = "#name,Test\n#fiscal_year,2021\nid,pct\na:010,500000\n";
         assert!(parse_template_csv(csv).is_err());
     }
 
     #[test]
     fn test_template_name_too_long() {
         let long_name = "x".repeat(200);
-        let csv = format!("#TNV-TEMPLATE\n#name,{}\n#fiscal_year,2021\nid,value\na:010,100\n", long_name);
+        let csv = format!("#TNV-TEMPLATE\n#name,{}\n#fiscal_year,2021\nid,pct\na:010,100\n", long_name);
         assert!(parse_template_csv(&csv).is_err());
     }
 
     #[test]
     fn test_template_duplicate_ids() {
-        let csv = "#TNV-TEMPLATE\n#name,Dup\n#fiscal_year,2021\nid,value\na:010,100\na:010,200\n";
+        let csv = "#TNV-TEMPLATE\n#name,Dup\n#fiscal_year,2021\nid,pct\na:010,100\na:010,200\n";
         assert!(parse_template_csv(csv).is_err());
     }
 
     #[test]
     fn test_template_negative_value() {
-        let csv = "#TNV-TEMPLATE\n#name,Neg\n#fiscal_year,2021\nid,value\na:010,-100\n";
+        let csv = "#TNV-TEMPLATE\n#name,Neg\n#fiscal_year,2021\nid,pct\na:010,-100\n";
         assert!(parse_template_csv(csv).is_err());
     }
 
@@ -304,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_template_name_too_short() {
-        let csv = "#TNV-TEMPLATE\n#name,ab\n#fiscal_year,2021\nid,value\na:010,100\n";
+        let csv = "#TNV-TEMPLATE\n#name,ab\n#fiscal_year,2021\nid,pct\na:010,100\n";
         let err = parse_template_csv(csv).unwrap_err();
         assert!(err.contains("name"), "got: {}", err);
     }
@@ -312,14 +313,14 @@ mod tests {
     #[test]
     fn test_template_desc_too_long() {
         let long_desc = "x".repeat(513);
-        let csv = format!("#TNV-TEMPLATE\n#name,Good Name\n#description,{}\n#fiscal_year,2021\nid,value\na:010,100\n", long_desc);
+        let csv = format!("#TNV-TEMPLATE\n#name,Good Name\n#description,{}\n#fiscal_year,2021\nid,pct\na:010,100\n", long_desc);
         let err = parse_template_csv(&csv).unwrap_err();
         assert!(err.contains("description"), "got: {}", err);
     }
 
     #[test]
     fn test_template_bad_fiscal_year() {
-        let csv = "#TNV-TEMPLATE\n#name,Good Name\n#fiscal_year,20\nid,value\na:010,100\n";
+        let csv = "#TNV-TEMPLATE\n#name,Good Name\n#fiscal_year,20\nid,pct\na:010,100\n";
         let err = parse_template_csv(csv).unwrap_err();
         assert!(err.contains("fiscal_year"), "got: {}", err);
     }
@@ -327,7 +328,7 @@ mod tests {
     #[test]
     fn test_template_node_id_too_long() {
         let long_id = "a:".to_string() + &"0".repeat(31);
-        let csv = format!("#TNV-TEMPLATE\n#name,Good Name\n#fiscal_year,2021\nid,value\n{},100\n", long_id);
+        let csv = format!("#TNV-TEMPLATE\n#name,Good Name\n#fiscal_year,2021\nid,pct\n{},100\n", long_id);
         let err = parse_template_csv(&csv).unwrap_err();
         assert!(err.contains("node_id"), "got: {}", err);
     }
@@ -336,7 +337,7 @@ mod tests {
     fn test_template_csv_too_large() {
         // 512001 bytes should fail
         let padding = "a:010,100\n".repeat(60000); // ~600KB
-        let csv = format!("#TNV-TEMPLATE\n#name,Big\n#fiscal_year,2021\nid,value\n{}", padding);
+        let csv = format!("#TNV-TEMPLATE\n#name,Big\n#fiscal_year,2021\nid,pct\n{}", padding);
         let err = parse_template_csv(&csv).unwrap_err();
         assert!(err.contains("bytes") || err.contains("exceed"), "got: {}", err);
     }
@@ -350,7 +351,7 @@ mod tests {
 
     #[test]
     fn test_template_too_many_entries() {
-        let mut csv = "#TNV-TEMPLATE\n#name,Big Template\n#fiscal_year,2021\nid,value\n".to_string();
+        let mut csv = "#TNV-TEMPLATE\n#name,Big Template\n#fiscal_year,2021\nid,pct\n".to_string();
         for i in 0..5001 {
             csv.push_str(&format!("c:{:06},100\n", i));
         }
