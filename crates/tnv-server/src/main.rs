@@ -84,6 +84,14 @@ async fn run() -> Result<(), String> {
         );
     }
 
+    // Pool size + request limits (tunable for the deployment).
+    let db_max_connections: u32 = std::env::var("DB_MAX_CONNECTIONS").ok()
+        .and_then(|s| s.parse().ok()).filter(|n| *n > 0).unwrap_or(10);
+    let request_timeout_secs: u64 = std::env::var("REQUEST_TIMEOUT_SECS").ok()
+        .and_then(|s| s.parse().ok()).filter(|n| *n > 0).unwrap_or(30);
+    let max_concurrent: usize = std::env::var("MAX_CONCURRENT_REQUESTS").ok()
+        .and_then(|s| s.parse().ok()).filter(|n| *n > 0).unwrap_or(1024);
+
     // ─── Filesystem prep (sqlite needs parent dir to exist) ──────
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("create data_dir {data_dir}: {e}"))?;
@@ -96,7 +104,7 @@ async fn run() -> Result<(), String> {
     // ─── Database ────────────────────────────────────────────────
     sqlx::any::install_default_drivers();
     let pool = AnyPoolOptions::new()
-        .max_connections(10)
+        .max_connections(db_max_connections)
         .connect(&database_url).await
         // Do not interpolate database_url — it may carry a password.
         .map_err(|e| format!("database connection failed ({:?}): {e}", backend))?;
@@ -196,16 +204,46 @@ async fn run() -> Result<(), String> {
         .fallback_service(static_service)
         .layer(CorsLayer::permissive())
         .layer(DefaultBodyLimit::max(1024 * 1024)) // 1 MB
+        // Cap how long any request may run (slow-loris / hung-handler defense).
+        .layer(tower_http::timeout::TimeoutLayer::new(
+            std::time::Duration::from_secs(request_timeout_secs)))
+        // Bound total in-flight requests so a burst can't exhaust resources.
+        .layer(tower::limit::GlobalConcurrencyLimitLayer::new(max_concurrent))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await
         .map_err(|e| format!("bind {bind_addr}: {e}"))?;
-    tracing::info!("TNV server listening on {bind_addr} (fiscal_year={fiscal_year}, backend={:?})", backend);
+    tracing::info!(
+        "TNV server listening on {bind_addr} (fiscal_year={fiscal_year}, backend={:?}, \
+         pool={db_max_connections}, timeout={request_timeout_secs}s, max_conc={max_concurrent})",
+        backend);
 
     axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|e| format!("serve: {e}"))
+}
+
+/// Resolve when SIGINT (Ctrl-C) or SIGTERM (deploy/restart) arrives, so axum can
+/// stop accepting new connections and drain in-flight requests.
+async fn shutdown_signal() {
+    let ctrl_c = async { let _ = tokio::signal::ctrl_c().await; };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => { s.recv().await; }
+            Err(e) => tracing::warn!("failed to install SIGTERM handler: {e}"),
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
+    tracing::info!("shutdown signal received; draining in-flight requests");
 }
 
 /// Handle `tnv-server admin <subcommand>` CLI invocations, then exit.
