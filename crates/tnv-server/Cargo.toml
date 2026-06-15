@@ -23,3 +23,4 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-r
 async-trait = "0.1"
 tnv-budget-tree = { path = "../tnv-budget-tree" }
 lettre = { version = "0.11.22", default-features = false, features = ["smtp-transport", "builder", "tokio1-rustls-tls", "hostname", "pool"] }
+axum-acl = { git = "https://github.com/greenpdx/axum-acl", rev = "8d28ecaee9daa6b078017088f7190d113c6df7f4", version = "0.3.0" }

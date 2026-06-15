@@ -103,14 +103,38 @@ pub struct MeResponse {
     pub created_at: String,
 }
 
+// ─── Subjects & roles ─────────────────────────────────────────────
+
+/// Subject kinds: who owns a submission/template and authenticates.
+pub const SUBJECT_ACCOUNT: &str = "account"; // email/password account
+pub const SUBJECT_PERSON: &str = "person";   // demo PIN identity
+
+/// Minimum tier that grants admin access.
+pub const ADMIN_TIER: i32 = 100;
+
+fn default_kind() -> String { SUBJECT_ACCOUNT.to_string() }
+
 // ─── JWT Claims ───────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: i64,        // account id
+    pub sub: i64,        // subject id (account id or person id, per `kind`)
     pub username: String,
     pub tier: i32,
+    /// Subject kind: "account" or "person". Defaulted for resilience.
+    #[serde(default = "default_kind")]
+    pub kind: String,
+    /// Token id, for revocation. Defaulted for resilience.
+    #[serde(default)]
+    pub jti: String,
     pub exp: i64,        // expiry (unix timestamp)
+}
+
+impl Claims {
+    /// True if this token belongs to an admin account.
+    pub fn is_admin(&self) -> bool {
+        self.kind == SUBJECT_ACCOUNT && self.tier >= ADMIN_TIER
+    }
 }
 
 // ─── Template ─────────────────────────────────────────────────────
@@ -208,3 +232,59 @@ pub struct AggregateResponse {
     pub submission_count: usize,
     pub nodes: Vec<NodeStat>,
 }
+
+// ─── Admin DTOs ───────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct AdminUser {
+    pub kind: String,          // "account" | "person"
+    pub id: i64,
+    pub name: String,          // username or person name
+    pub tier: i32,
+    pub disabled: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminTemplate {
+    pub receipt_no: String,
+    pub name: String,
+    pub subject_kind: String,
+    pub subject_id: i64,
+    pub fiscal_year: String,
+    pub hidden: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuditEntry {
+    pub id: i64,
+    pub ts: String,
+    pub actor_kind: String,
+    pub actor_id: Option<i64>,
+    pub action: String,
+    pub target_kind: Option<String>,
+    pub target_id: Option<String>,
+    pub detail: Option<String>,
+    pub ip: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SettingItem {
+    pub key: String,
+    pub value: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetRoleRequest {
+    pub tier: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetSettingRequest {
+    pub value: String,
+}
+
+/// Editable runtime settings (allowlist — never exposes secrets).
+pub const SETTING_KEYS: &[&str] = &["registration_open", "demo_identity_enabled", "maintenance_mode"];

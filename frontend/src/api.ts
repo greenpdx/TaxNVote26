@@ -70,6 +70,24 @@ export async function identify(name: string, secret: string): Promise<{ token: s
   return res.json()
 }
 
+export interface MeResponse { id: number; username: string; tier: number; created_at: string }
+
+export async function login(email: string, password: string): Promise<{ token: string; username: string }> {
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  if (!res.ok) return asError(res)
+  return res.json()
+}
+
+export async function me(token: string): Promise<MeResponse> {
+  const res = await fetch(`${BASE}/auth/me`, { headers: authHeaders(token) })
+  if (!res.ok) return asError(res)
+  return res.json()
+}
+
 // ─── Templates ─────────────────────────────────────────────────
 export async function listTemplates(): Promise<TemplateSummary[]> {
   const res = await fetch(`${BASE}/templates`)
@@ -234,6 +252,59 @@ export function buildTemplateCsv(
   lines.push('id,value')
   for (const e of entries) lines.push(`${e.id},${Math.round(e.value)}`)
   return lines.join('\n') + '\n'
+}
+
+// ─── Admin ─────────────────────────────────────────────────────
+
+export interface AdminUser {
+  kind: string; id: number; name: string; tier: number; disabled: boolean; created_at: string
+}
+export interface AdminTemplate {
+  receipt_no: string; name: string; subject_kind: string; subject_id: number
+  fiscal_year: string; hidden: boolean; created_at: string
+}
+export interface AuditEntry {
+  id: number; ts: string; actor_kind: string; actor_id: number | null; action: string
+  target_kind: string | null; target_id: string | null; detail: string | null; ip: string | null
+}
+export interface SettingItem { key: string; value: string; updated_at: string }
+
+async function adminReq(path: string, token: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(`${BASE}/admin${path}`, {
+    ...init,
+    headers: { 'content-type': 'application/json', ...authHeaders(token), ...(init?.headers || {}) },
+  })
+  if (!res.ok) return asError(res)
+  return res
+}
+
+export async function adminListUsers(token: string, q = ''): Promise<AdminUser[]> {
+  const qs = q ? `?q=${encodeURIComponent(q)}` : ''
+  return (await adminReq(`/users${qs}`, token)).json()
+}
+export async function adminSetUserDisabled(token: string, kind: string, id: number, disabled: boolean): Promise<void> {
+  const action = disabled ? 'disable' : 'enable'
+  await adminReq(`/users/${kind}/${id}/${action}`, token, { method: 'POST' })
+}
+export async function adminSetRole(token: string, kind: string, id: number, tier: number): Promise<void> {
+  await adminReq(`/users/${kind}/${id}/role`, token, { method: 'POST', body: JSON.stringify({ tier }) })
+}
+export async function adminListTemplates(token: string): Promise<AdminTemplate[]> {
+  return (await adminReq('/templates', token)).json()
+}
+export async function adminSetTemplateHidden(token: string, receiptNo: string, hidden: boolean): Promise<void> {
+  const action = hidden ? 'hide' : 'unhide'
+  await adminReq(`/templates/${encodeURIComponent(receiptNo)}/${action}`, token, { method: 'POST' })
+}
+export async function adminListAudit(token: string, action = ''): Promise<AuditEntry[]> {
+  const qs = action ? `?action=${encodeURIComponent(action)}` : ''
+  return (await adminReq(`/audit${qs}`, token)).json()
+}
+export async function adminGetConfig(token: string): Promise<SettingItem[]> {
+  return (await adminReq('/config', token)).json()
+}
+export async function adminSetConfig(token: string, key: string, value: string): Promise<void> {
+  await adminReq(`/config/${encodeURIComponent(key)}`, token, { method: 'PUT', body: JSON.stringify({ value }) })
 }
 
 /** Parse the data rows of a #TNV-TEMPLATE (`id,value`) or #TNV-TAXDOLLAR

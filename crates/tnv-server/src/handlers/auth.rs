@@ -175,7 +175,7 @@ pub async fn verify(
         .map_err(|e| internal(e.to_string()))?;
     let id: i64 = row.try_get("id").map_err(|e| internal(e.to_string()))?;
 
-    let token = create_jwt(id, &username, 0, state.jwt_ttl_secs, &state.jwt_secret).map_err(internal)?;
+    let token = create_jwt(id, &username, 0, SUBJECT_ACCOUNT, state.jwt_ttl_secs, &state.jwt_secret).map_err(internal)?;
     Ok(Json(AuthResponse { token, username }))
 }
 
@@ -192,7 +192,7 @@ pub async fn login(
     let email_h = hash_email(&req.email);
 
     let row = sqlx::query(&state.q(
-        "SELECT id, username, password_hash, tier FROM accounts WHERE email_hash = ? LIMIT 1"
+        "SELECT id, username, password_hash, tier, disabled FROM accounts WHERE email_hash = ? LIMIT 1"
     ))
         .bind(&email_h)
         .fetch_optional(&state.db).await
@@ -212,12 +212,16 @@ pub async fn login(
     let username: String = row.try_get("username").map_err(|e| internal(e.to_string()))?;
     let password_hash: String = row.try_get("password_hash").map_err(|e| internal(e.to_string()))?;
     let tier: i32 = row.try_get("tier").map_err(|e| internal(e.to_string()))?;
+    let disabled: i64 = row.try_get("disabled").map_err(|e| internal(e.to_string()))?;
 
     if !verify_password(&req.password, &password_hash) {
         return Err(bad("invalid email or password".into()));
     }
+    if disabled != 0 {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "account disabled"}))));
+    }
 
-    let token = create_jwt(id, &username, tier, state.jwt_ttl_secs, &state.jwt_secret).map_err(internal)?;
+    let token = create_jwt(id, &username, tier, SUBJECT_ACCOUNT, state.jwt_ttl_secs, &state.jwt_secret).map_err(internal)?;
     Ok(Json(AuthResponse { token, username }))
 }
 
@@ -257,8 +261,18 @@ impl axum::extract::FromRequestParts<AppState> for Claims {
         let token = auth.strip_prefix("Bearer ")
             .ok_or_else(|| (StatusCode::UNAUTHORIZED, Json(json!({"error": "invalid auth format"}))))?;
 
-        verify_jwt(token, &state.jwt_secret)
-            .map_err(|e| (StatusCode::UNAUTHORIZED, Json(json!({"error": e}))))
+        let claims = verify_jwt(token, &state.jwt_secret)
+            .map_err(|e| (StatusCode::UNAUTHORIZED, Json(json!({"error": e}))))?;
+
+        // Revocation + disabled checks so an admin "force logout" or disable
+        // takes effect immediately rather than only at token expiry.
+        if state.is_token_revoked(&claims.jti).await.unwrap_or(false) {
+            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "token revoked"}))));
+        }
+        if state.subject_disabled(&claims.kind, claims.sub).await.unwrap_or(true) {
+            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "account disabled"}))));
+        }
+        Ok(claims)
     }
 }
 

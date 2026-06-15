@@ -1,6 +1,7 @@
 // src/state.rs — AppState backed by SQLx (sqlite or postgres via AnyPool).
 
 use sqlx::AnyPool;
+use sqlx::Row;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -148,6 +149,8 @@ pub struct AppState {
     /// Cached aggregate results keyed by fiscal_year. Invalidated on submit
     /// (recompute-on-change); a present entry is the last computed display.
     pub aggregate_cache: Arc<RwLock<std::collections::HashMap<String, crate::models::AggregateResponse>>>,
+    /// Runtime settings (admin-editable), cached from the `settings` table.
+    pub settings: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl AppState {
@@ -178,6 +181,94 @@ impl AppState {
             challenges: Arc::new(RwLock::new(ChallengeStore::new())),
             mailer,
             aggregate_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            settings: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Load all rows from the `settings` table into the in-memory cache.
+    pub async fn reload_settings(&self) -> Result<(), sqlx::Error> {
+        let rows = sqlx::query("SELECT key, value FROM settings")
+            .fetch_all(&self.db).await?;
+        let mut map = HashMap::new();
+        for r in &rows {
+            let k: String = r.try_get("key").unwrap_or_default();
+            let v: String = r.try_get("value").unwrap_or_default();
+            map.insert(k, v);
+        }
+        *self.settings.write().await = map;
+        Ok(())
+    }
+
+    /// Get a setting, falling back to `default` when unset.
+    pub async fn setting_or(&self, key: &str, default: bool) -> bool {
+        match self.settings.read().await.get(key) {
+            Some(v) => matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
+            None => default,
+        }
+    }
+
+    /// Upsert a setting in the DB and refresh the cache.
+    pub async fn set_setting(&self, key: &str, value: &str, by: &str) -> Result<(), sqlx::Error> {
+        let now = chrono::Utc::now().to_rfc3339();
+        // Portable upsert across sqlite/postgres.
+        sqlx::query(&self.q(
+            "INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by"
+        ))
+            .bind(key).bind(value).bind(&now).bind(by)
+            .execute(&self.db).await?;
+        self.settings.write().await.insert(key.to_string(), value.to_string());
+        Ok(())
+    }
+
+    /// True if the given subject account/person is flagged disabled.
+    pub async fn subject_disabled(&self, kind: &str, id: i64) -> Result<bool, sqlx::Error> {
+        let table = if kind == crate::models::SUBJECT_ACCOUNT { "accounts" } else { "persons" };
+        let row = sqlx::query(&self.q(&format!("SELECT disabled FROM {table} WHERE id = ? LIMIT 1")))
+            .bind(id)
+            .fetch_optional(&self.db).await?;
+        match row {
+            Some(r) => Ok(r.try_get::<i64, _>("disabled").unwrap_or(0) != 0),
+            None => Ok(true), // unknown subject → treat as not authorized
+        }
+    }
+
+    /// True if a token id has been revoked.
+    pub async fn is_token_revoked(&self, jti: &str) -> Result<bool, sqlx::Error> {
+        if jti.is_empty() { return Ok(false); }
+        let row = sqlx::query(&self.q("SELECT 1 AS one FROM revoked_tokens WHERE jti = ? LIMIT 1"))
+            .bind(jti)
+            .fetch_optional(&self.db).await?;
+        Ok(row.is_some())
+    }
+
+    /// Append an entry to the audit log. Best-effort: failures are logged, not
+    /// propagated, so auditing never breaks the request it describes.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn audit(
+        &self,
+        actor_kind: &str,
+        actor_id: Option<i64>,
+        action: &str,
+        target_kind: Option<&str>,
+        target_id: Option<&str>,
+        detail: Option<&str>,
+        ip: Option<&str>,
+    ) {
+        let res = sqlx::query(&self.q(
+            "INSERT INTO audit_log (actor_kind, actor_id, action, target_kind, target_id, detail, ip) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ))
+            .bind(actor_kind)
+            .bind(actor_id)
+            .bind(action)
+            .bind(target_kind)
+            .bind(target_id)
+            .bind(detail)
+            .bind(ip)
+            .execute(&self.db).await;
+        if let Err(e) = res {
+            tracing::error!("audit write failed for action '{action}': {e}");
         }
     }
 

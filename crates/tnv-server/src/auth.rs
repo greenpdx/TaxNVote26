@@ -64,14 +64,25 @@ pub fn hash_secret(name: &str, pin: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Create a JWT token for an authenticated user. `ttl_secs` is the token
-/// lifetime (there is no revocation yet, so keep it short).
-pub fn create_jwt(account_id: i64, username: &str, tier: i32, ttl_secs: i64, secret: &str) -> Result<String, String> {
+/// Generate a random token id (jti) for revocation tracking.
+pub fn generate_jti() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let bytes: [u8; 16] = rng.r#gen();
+    hex::encode(bytes)
+}
+
+/// Create a JWT token for an authenticated subject. `kind` is the subject kind
+/// ("account" or "person"); `ttl_secs` is the lifetime (kept short — a `jti` is
+/// embedded so tokens can be revoked).
+pub fn create_jwt(sub: i64, username: &str, tier: i32, kind: &str, ttl_secs: i64, secret: &str) -> Result<String, String> {
     let exp = chrono::Utc::now().timestamp() + ttl_secs;
     let claims = Claims {
-        sub: account_id,
+        sub,
         username: username.to_string(),
         tier,
+        kind: kind.to_string(),
+        jti: generate_jti(),
         exp,
     };
     encode(
@@ -134,7 +145,7 @@ mod tests {
     #[test]
     fn test_jwt_roundtrip() {
         let secret = "test-secret-key";
-        let token = create_jwt(42, "shaun", 0, 3600, secret).unwrap();
+        let token = create_jwt(42, "shaun", 0, "account", 3600, secret).unwrap();
         let claims = verify_jwt(&token, secret).unwrap();
         assert_eq!(claims.sub, 42);
         assert_eq!(claims.username, "shaun");
@@ -142,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_jwt_bad_secret() {
-        let token = create_jwt(1, "x", 0, 3600, "secret1").unwrap();
+        let token = create_jwt(1, "x", 0, "account", 3600, "secret1").unwrap();
         assert!(verify_jwt(&token, "secret2").is_err());
     }
 

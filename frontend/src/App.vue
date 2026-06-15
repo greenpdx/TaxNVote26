@@ -6,6 +6,7 @@ import NodeRow from './components/NodeRow.vue'
 import LoginDialog from './components/LoginDialog.vue'
 import TemplatesView from './components/TemplatesView.vue'
 import ResultsView from './components/ResultsView.vue'
+import AdminView from './components/AdminView.vue'
 import {
   buildTaxDollarCsv, submitTaxDollar, buildTemplateCsv, createTemplate,
   myTaxDollars, getTaxDollarCsv, parseTemplateEntries,
@@ -14,7 +15,7 @@ import {
 const store = useBudgetStore()
 const session = useSessionStore()
 
-type View = 'budget' | 'templates' | 'results'
+type View = 'budget' | 'templates' | 'results' | 'admin'
 const view = ref<View>('budget')
 const msg = ref<string | null>(null)
 const msgErr = ref(false)
@@ -129,6 +130,7 @@ async function loadMine() {
         <button :class="{ active: view === 'budget' }" @click="view = 'budget'">Budget</button>
         <button :class="{ active: view === 'templates' }" @click="view = 'templates'">Templates</button>
         <button :class="{ active: view === 'results' }" @click="view = 'results'">Results</button>
+        <button :class="{ active: view === 'admin' }" @click="view = 'admin'">Admin</button>
       </nav>
 
       <div v-if="msg" class="flash" :class="{ err: msgErr }" @click="msg = null">{{ msg }}</div>
@@ -181,8 +183,13 @@ async function loadMine() {
     </main>
 
     <!-- ─── Results view ─── -->
-    <main v-else class="tree-container">
+    <main v-else-if="view === 'results'" class="tree-container">
       <ResultsView />
+    </main>
+
+    <!-- ─── Admin view ─── -->
+    <main v-else class="tree-container">
+      <AdminView />
     </main>
 
     <footer class="footer">

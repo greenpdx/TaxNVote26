@@ -46,10 +46,11 @@ pub async fn submit_taxdollar(
 
     let mut tx = state.db.begin().await.map_err(|e| internal(e.to_string()))?;
 
-    // Upsert: drop the prior TD for (account, fiscal_year). CASCADE removes allocations.
+    // Upsert: drop the prior TD for (subject, fiscal_year). CASCADE removes allocations.
     let del = sqlx::query(&state.q(
-        "DELETE FROM tax_dollars WHERE person_id = ? AND fiscal_year = ?"
+        "DELETE FROM tax_dollars WHERE subject_kind = ? AND subject_id = ? AND fiscal_year = ?"
     ))
+        .bind(&claims.kind)
         .bind(claims.sub)
         .bind(&parsed.fiscal_year)
         .execute(&mut *tx).await
@@ -57,10 +58,11 @@ pub async fn submit_taxdollar(
     let replaced = del.rows_affected() > 0;
 
     let row = sqlx::query(&state.q(
-        "INSERT INTO tax_dollars (receipt_token, person_id, fiscal_year, template_receipt_no, raw_csv, checksum, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id"
+        "INSERT INTO tax_dollars (receipt_token, subject_kind, subject_id, fiscal_year, template_receipt_no, raw_csv, checksum, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
     ))
         .bind(&receipt_token)
+        .bind(&claims.kind)
         .bind(claims.sub)
         .bind(&parsed.fiscal_year)
         .bind(&parsed.template_id)
@@ -101,7 +103,7 @@ pub async fn get_taxdollar(
     Path(receipt_token): Path<String>,
 ) -> Result<String, (StatusCode, Json<Value>)> {
     let row = sqlx::query(&state.q(
-        "SELECT raw_csv FROM tax_dollars WHERE receipt_token = ? LIMIT 1"
+        "SELECT raw_csv FROM tax_dollars WHERE receipt_token = ? AND hidden = 0 LIMIT 1"
     ))
         .bind(&receipt_token)
         .fetch_optional(&state.db).await
@@ -116,8 +118,9 @@ pub async fn my_taxdollars(
 ) -> Result<Json<Vec<TaxDollarSummary>>, (StatusCode, Json<Value>)> {
     let rows = sqlx::query(&state.q(
         "SELECT receipt_token, fiscal_year, template_receipt_no, created_at \
-         FROM tax_dollars WHERE person_id = ? ORDER BY id DESC"
+         FROM tax_dollars WHERE subject_kind = ? AND subject_id = ? ORDER BY id DESC"
     ))
+        .bind(&claims.kind)
         .bind(claims.sub)
         .fetch_all(&state.db).await
         .map_err(|e| internal(e.to_string()))?;

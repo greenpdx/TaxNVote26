@@ -47,7 +47,7 @@ pub async fn aggregate(
 async fn compute_aggregate(state: &AppState, fy: &str) -> Result<AggregateResponse, sqlx::Error> {
     // All submissions for the year (one per person).
     let td_rows = sqlx::query(&state.q(
-        "SELECT id FROM tax_dollars WHERE fiscal_year = ?"
+        "SELECT id FROM tax_dollars WHERE fiscal_year = ? AND hidden = 0"
     ))
         .bind(fy)
         .fetch_all(&state.db).await?;

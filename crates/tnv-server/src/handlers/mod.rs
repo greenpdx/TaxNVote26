@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod aggregate;
 pub mod auth;
 pub mod health;

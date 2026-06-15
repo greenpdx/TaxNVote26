@@ -30,7 +30,7 @@ pub async fn identify(
 
     // Find existing (name, secret) person.
     let existing = sqlx::query(&state.q(
-        "SELECT id FROM persons WHERE name = ? AND secret_hash = ? LIMIT 1"
+        "SELECT id, disabled FROM persons WHERE name = ? AND secret_hash = ? LIMIT 1"
     ))
         .bind(&name)
         .bind(&secret_hash)
@@ -38,6 +38,10 @@ pub async fn identify(
         .map_err(|e| internal(e.to_string()))?;
 
     let person_id: i64 = if let Some(row) = existing {
+        let disabled: i64 = row.try_get("disabled").map_err(|e| internal(e.to_string()))?;
+        if disabled != 0 {
+            return Err((StatusCode::FORBIDDEN, Json(json!({"error": "identity disabled"}))));
+        }
         row.try_get("id").map_err(|e| internal(e.to_string()))?
     } else {
         let now = chrono::Utc::now().to_rfc3339();
@@ -52,7 +56,7 @@ pub async fn identify(
         row.try_get("id").map_err(|e| internal(e.to_string()))?
     };
 
-    let token = create_jwt(person_id, &name, 0, state.jwt_ttl_secs, &state.jwt_secret).map_err(internal)?;
+    let token = create_jwt(person_id, &name, 0, SUBJECT_PERSON, state.jwt_ttl_secs, &state.jwt_secret).map_err(internal)?;
     Ok(Json(AuthResponse { token, username: name }))
 }
 

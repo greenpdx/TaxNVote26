@@ -1,7 +1,10 @@
+mod acl;
 mod auth;
 mod csv_parse;
 mod extract;
 mod handlers;
+#[cfg(test)]
+mod it_admin;
 mod mailer;
 mod models;
 mod state;
@@ -128,6 +131,16 @@ async fn run() -> Result<(), String> {
         mailer,
     );
 
+    // ─── CLI subcommands (e.g. `tnv-server admin promote <email>`) ───
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("admin") {
+        return run_admin_cli(&state, &args).await;
+    }
+
+    // ─── Bootstrap admin + load runtime settings ─────────────────
+    bootstrap_admin(&state).await?;
+    state.reload_settings().await.map_err(|e| format!("load settings: {e}"))?;
+
     // Spawn periodic rate limiter cleanup (every 5 min)
     {
         let rl = state.rate_limiter.clone();
@@ -160,6 +173,21 @@ async fn run() -> Result<(), String> {
         api = api.route("/identify", post(handlers::identity::identify));
     }
 
+    // Admin sub-router, gated to admin-tier callers by the axum-acl layer.
+    let admin = Router::new()
+        .route("/users", get(handlers::admin::list_users))
+        .route("/users/{kind}/{id}/disable", post(handlers::admin::disable_user))
+        .route("/users/{kind}/{id}/enable", post(handlers::admin::enable_user))
+        .route("/users/{kind}/{id}/role", post(handlers::admin::set_role))
+        .route("/templates", get(handlers::admin::list_templates))
+        .route("/templates/{receipt_no}/hide", post(handlers::admin::hide_template))
+        .route("/templates/{receipt_no}/unhide", post(handlers::admin::unhide_template))
+        .route("/audit", get(handlers::admin::list_audit))
+        .route("/config", get(handlers::admin::get_config))
+        .route("/config/{key}", axum::routing::put(handlers::admin::set_config))
+        .layer(acl::admin_layer(state.jwt_secret.clone()));
+    api = api.nest("/admin", admin);
+
     let static_service = ServeDir::new("static")
         .not_found_service(ServeFile::new("static/index.html"));
 
@@ -178,6 +206,51 @@ async fn run() -> Result<(), String> {
     axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await
         .map_err(|e| format!("serve: {e}"))
+}
+
+/// Handle `tnv-server admin <subcommand>` CLI invocations, then exit.
+async fn run_admin_cli(state: &AppState, args: &[String]) -> Result<(), String> {
+    match args.get(2).map(String::as_str) {
+        Some("promote") => {
+            let email = args.get(3)
+                .ok_or("usage: tnv-server admin promote <email>".to_string())?;
+            let email_h = crate::auth::hash_email(email);
+            let n = sqlx::query(&state.q("UPDATE accounts SET tier = ? WHERE email_hash = ?"))
+                .bind(models::ADMIN_TIER)
+                .bind(&email_h)
+                .execute(&state.db).await
+                .map_err(|e| format!("promote failed: {e}"))?
+                .rows_affected();
+            if n == 0 {
+                return Err(format!("no account found for email {email}"));
+            }
+            println!("Promoted {email} to admin (tier {}).", models::ADMIN_TIER);
+            Ok(())
+        }
+        other => Err(format!("unknown admin command: {other:?} (try: promote <email>)")),
+    }
+}
+
+/// Promote the BOOTSTRAP_ADMIN_EMAIL account to admin at startup, if present.
+async fn bootstrap_admin(state: &AppState) -> Result<(), String> {
+    let email = match std::env::var("BOOTSTRAP_ADMIN_EMAIL") {
+        Ok(e) if !e.trim().is_empty() => e,
+        _ => return Ok(()),
+    };
+    let email_h = crate::auth::hash_email(&email);
+    let n = sqlx::query(&state.q("UPDATE accounts SET tier = ? WHERE email_hash = ? AND tier < ?"))
+        .bind(models::ADMIN_TIER)
+        .bind(&email_h)
+        .bind(models::ADMIN_TIER)
+        .execute(&state.db).await
+        .map_err(|e| format!("bootstrap admin: {e}"))?
+        .rows_affected();
+    if n > 0 {
+        tracing::info!("Bootstrapped admin account for {email}");
+    } else {
+        tracing::info!("BOOTSTRAP_ADMIN_EMAIL set; no matching non-admin account yet for {email}");
+    }
+    Ok(())
 }
 
 /// Read a boolean env var. Accepts 1/true/yes/on (case-insensitive) as true.

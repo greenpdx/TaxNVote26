@@ -13,7 +13,7 @@ pub async fn list_templates(
     let rows = sqlx::query(
         "SELECT t.receipt_no, t.name, t.entity_name, t.description, t.fiscal_year, t.created_at, \
                 (SELECT COUNT(*) FROM template_entries WHERE template_id = t.id) AS entry_count \
-         FROM templates t ORDER BY t.id DESC"
+         FROM templates t WHERE t.hidden = 0 ORDER BY t.id DESC"
     )
         .fetch_all(&state.db).await
         .map_err(|e| internal(e.to_string()))?;
@@ -39,7 +39,7 @@ pub async fn get_template(
     Path(receipt_no): Path<String>,
 ) -> Result<String, (StatusCode, Json<Value>)> {
     let row = sqlx::query(&state.q(
-        "SELECT raw_csv FROM templates WHERE receipt_no = ? LIMIT 1"
+        "SELECT raw_csv FROM templates WHERE receipt_no = ? AND hidden = 0 LIMIT 1"
     ))
         .bind(&receipt_no)
         .fetch_optional(&state.db).await
@@ -77,10 +77,11 @@ pub async fn create_template(
     let mut tx = state.db.begin().await.map_err(|e| internal(e.to_string()))?;
 
     let row = sqlx::query(&state.q(
-        "INSERT INTO templates (receipt_no, person_id, entity_name, name, description, fiscal_year, raw_csv, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
+        "INSERT INTO templates (receipt_no, subject_kind, subject_id, entity_name, name, description, fiscal_year, raw_csv, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
     ))
         .bind(&receipt_no)
+        .bind(&claims.kind)
         .bind(claims.sub)
         .bind(entity)
         .bind(&parsed.name)
