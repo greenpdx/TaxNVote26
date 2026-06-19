@@ -431,7 +431,8 @@ pub async fn set_config(
     if !SETTING_KEYS.contains(&key.as_str()) {
         return Err(err(StatusCode::BAD_REQUEST, "unknown setting key"));
     }
-    if req.value.len() > 256 {
+    let max = if is_lp_key(&key) { LP_VALUE_MAX } else { SETTING_VALUE_MAX };
+    if req.value.len() > max {
         return Err(err(StatusCode::BAD_REQUEST, "value too long"));
     }
     state.set_setting(&key, &req.value, &claims.username).await

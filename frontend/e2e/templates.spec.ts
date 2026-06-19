@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test'
 // Template registry: an identified person can save the current budget as a
 // template with a name + entity + description; anyone can list and load it.
 test('save current as template, list it, and load it back', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/#/app')
   await expect(page.getByText('Defense', { exact: true })).toBeVisible({ timeout: 15000 })
 
   const suffix = Math.random().toString(36).slice(2, 8)

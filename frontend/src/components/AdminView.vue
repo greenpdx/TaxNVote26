@@ -75,9 +75,11 @@ async function toggleTplHidden(t: api.AdminTemplate) {
 async function saveSetting(s: api.SettingItem, value: string) {
   try { await api.adminSetConfig(tok(), s.key, value); flash(`${s.key} = ${value || '(unset)'}`); await load() } catch (e) { fail(e) }
 }
-// Free-text settings render as a text input; everything else is a boolean toggle.
+// Long-form landing copy (lp_*) renders as a textarea; other free-text keys as a
+// single-line input; everything else as a boolean toggle.
 const STRING_KEYS = new Set(['subtitle_1', 'subtitle_2'])
-const isStringKey = (key: string) => STRING_KEYS.has(key)
+const isLpKey = (key: string) => key.startsWith('lp_')
+const isStringKey = (key: string) => STRING_KEYS.has(key) || isLpKey(key)
 </script>
 
 <template>
@@ -200,7 +202,10 @@ const isStringKey = (key: string) => STRING_KEYS.has(key)
           <tr v-for="s in config" :key="s.key">
             <td>{{ s.key }}</td>
             <td>
-              <input v-if="isStringKey(s.key)" class="cfg-text" type="text" maxlength="256"
+              <textarea v-if="isLpKey(s.key)" class="cfg-text cfg-area" maxlength="4000" rows="4"
+                        :value="s.value" placeholder="(default)"
+                        @change="saveSetting(s, ($event.target as HTMLTextAreaElement).value)"></textarea>
+              <input v-else-if="isStringKey(s.key)" class="cfg-text" type="text" maxlength="256"
                      :value="s.value" placeholder="(unset)"
                      @change="saveSetting(s, ($event.target as HTMLInputElement).value)" />
               <select v-else :value="s.value || 'false'" @change="saveSetting(s, ($event.target as HTMLSelectElement).value)">
@@ -225,6 +230,7 @@ const isStringKey = (key: string) => STRING_KEYS.has(key)
 .subtabs button.active { background: #3b82f6; border-color: #3b82f6; color: #fff; font-weight: 600; }
 .cfg-text { width: 22em; max-width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 5px 8px; border-radius: 6px; font-size: 13px; }
 .cfg-text:focus { outline: none; border-color: #3b82f6; }
+.cfg-area { width: 32em; resize: vertical; font-family: inherit; line-height: 1.5; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th { text-align: left; color: #64748b; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid #1e293b; }
 .tbl td { padding: 6px 8px; border-bottom: 1px solid #1e293b; vertical-align: middle; }

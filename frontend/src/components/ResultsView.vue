@@ -43,6 +43,11 @@ onMounted(load)
       </div>
     </div>
 
+    <p class="rlead">
+      The aggregate of everyone's allocations — priorities set directly by taxpayers,
+      with no party line and no lobbying. Hard data, not a poll.
+    </p>
+
     <div v-if="err" class="rerr">{{ err }}</div>
     <div v-else-if="loading && count === 0" class="rinfo">Loading…</div>
     <div v-else-if="count === 0" class="rinfo">
@@ -59,6 +64,7 @@ onMounted(load)
 .rtop { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .rtitle { font-size: 18px; color: #f59e0b; }
 .rsub { font-size: 12px; color: #64748b; }
+.rlead { font-size: 13px; line-height: 1.55; color: #94a3b8; margin: 0 0 14px; max-width: 60ch; }
 .rmeta { color: #94a3b8; font-size: 13px; white-space: nowrap; }
 .rbtn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 6px; cursor: pointer; padding: 2px 8px; }
 .rbtn:hover { background: #334155; color: #e2e8f0; }

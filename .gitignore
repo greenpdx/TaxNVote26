@@ -38,6 +38,9 @@ docker-pkg/static/
 docker-pkg/data/
 *.tar.gz
 
+# Staged deploy bundles (release binary + SPA + data per variant; build output)
+/deploy/
+
 # IDE
 .vscode/
 .idea/
