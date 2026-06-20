@@ -388,3 +388,26 @@ pub const DEFAULT_LP_PILLARS: &str =
 pub const DEFAULT_LP_PB_FOOTER: &str =
     "At scale, that's a credible, data-driven picture of what citizens actually want \
      funded — a counterweight to the appropriations process.";
+
+/// Effective default for a setting key when the admin hasn't stored one. Single
+/// source of truth shared by the public config endpoint and the admin Config tab
+/// (which pre-fills every field with its current effective value). Booleans must
+/// match the `setting_or(..)` defaults used at each call site.
+pub fn default_setting(key: &str) -> &'static str {
+    match key {
+        "registration_open" => "true",
+        "demo_identity_enabled" => "true",
+        "maintenance_mode" => "false",
+        "data_public" => "false",
+        "subtitle_1" => DEFAULT_SUBTITLE_1,
+        "subtitle_2" => DEFAULT_SUBTITLE_2,
+        "lp_kicker" => DEFAULT_LP_KICKER,
+        "lp_headline" => DEFAULT_LP_HEADLINE,
+        "lp_pitch" => DEFAULT_LP_PITCH,
+        "lp_why" => DEFAULT_LP_WHY,
+        "lp_pb_intro" => DEFAULT_LP_PB_INTRO,
+        "lp_pillars" => DEFAULT_LP_PILLARS,
+        "lp_pb_footer" => DEFAULT_LP_PB_FOOTER,
+        _ => "",
+    }
+}
