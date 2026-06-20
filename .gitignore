@@ -41,6 +41,9 @@ docker-pkg/data/
 # Staged deploy bundles (release binary + SPA + data per variant; build output)
 /deploy/
 
+# Install-package build output (packaging/make-package.sh)
+/dist-pkg/
+
 # IDE
 .vscode/
 .idea/
