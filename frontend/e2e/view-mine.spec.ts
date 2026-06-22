@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test'
 // tree, and (unlike Submit) does NOT auto-logout — so the user can actually
 // see their data. Manual logout resets the budget back to defaults.
 test('view-my-submission loads the saved data and stays signed in', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/#/app')
   await expect(page.getByText('Defense', { exact: true })).toBeVisible({ timeout: 15000 })
 
   const name = 'vm_' + Math.random().toString(36).slice(2, 8)

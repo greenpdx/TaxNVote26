@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test'
 // dialog, confirm the receipt + auto-logout (which resets the budget), then
 // verify the People's Budget aggregate updates with our submission.
 test('login → submit → auto-logout resets, Results updates', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/#/app')
 
   // Tree finished loading (a topic name is visible).
   await expect(page.getByText('Defense', { exact: true })).toBeVisible({ timeout: 15000 })

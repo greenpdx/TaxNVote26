@@ -79,7 +79,7 @@ onMounted(() => load())
     </main>
 
     <footer class="pub-foot">
-      <RouterLink to="/">← Build your own at Tax N Vote</RouterLink>
+      <RouterLink to="/app">← Build your own at Tax N Vote</RouterLink>
     </footer>
   </div>
 </template>

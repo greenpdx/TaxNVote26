@@ -413,8 +413,16 @@ pub async fn get_config(
         let u: String = r.try_get("updated_at").unwrap_or_default();
         stored.insert(k, (v, u));
     }
+    // Pre-fill every field with its effective value: the stored value if one was
+    // saved, otherwise the built-in default — so the admin edits the current copy
+    // rather than a blank box. `updated_at` stays empty for never-saved keys.
     let out = SETTING_KEYS.iter().map(|k| {
-        let (value, updated_at) = stored.get(*k).cloned().unwrap_or_default();
+        let (stored_value, updated_at) = stored.get(*k).cloned().unwrap_or_default();
+        let value = if stored_value.is_empty() {
+            default_setting(k).to_string()
+        } else {
+            stored_value
+        };
         SettingItem { key: k.to_string(), value, updated_at }
     }).collect();
     Ok(Json(out))
@@ -431,7 +439,8 @@ pub async fn set_config(
     if !SETTING_KEYS.contains(&key.as_str()) {
         return Err(err(StatusCode::BAD_REQUEST, "unknown setting key"));
     }
-    if req.value.len() > 256 {
+    let max = if is_lp_key(&key) { LP_VALUE_MAX } else { SETTING_VALUE_MAX };
+    if req.value.len() > max {
         return Err(err(StatusCode::BAD_REQUEST, "value too long"));
     }
     state.set_setting(&key, &req.value, &claims.username).await

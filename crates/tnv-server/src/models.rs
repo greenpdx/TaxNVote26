@@ -339,8 +339,75 @@ pub const SETTING_KEYS: &[&str] = &[
     "registration_open", "demo_identity_enabled", "maintenance_mode", "data_public",
     // Free-text header subtitles, shown publicly via /api/config/public.
     "subtitle_1", "subtitle_2",
+    // Landing-page copy (lp_*), also served by /api/config/public. Long-form,
+    // so set_config allows these up to LP_VALUE_MAX chars and the admin UI edits
+    // them as textareas. Multi-paragraph fields split on a blank line; lp_pillars
+    // is one "Bold — text" bullet per line.
+    "lp_kicker", "lp_headline", "lp_pitch",
+    "lp_why", "lp_pb_intro", "lp_pillars", "lp_pb_footer",
 ];
+
+/// Per-value length caps. Landing copy needs far more than the 256 used for
+/// flags/subtitles.
+pub const SETTING_VALUE_MAX: usize = 256;
+pub const LP_VALUE_MAX: usize = 4000;
+
+/// True for the long-form landing-page content keys.
+pub fn is_lp_key(key: &str) -> bool {
+    key.starts_with("lp_")
+}
 
 /// Default header subtitles when the admin hasn't set them.
 pub const DEFAULT_SUBTITLE_1: &str = "Your Tax Dollar, Your Voice";
 pub const DEFAULT_SUBTITLE_2: &str = "";
+
+// ─── Default landing-page copy (used until an admin overrides a key) ──────────
+pub const DEFAULT_LP_KICKER: &str =
+    "When you file your taxes, you vote for the U.S. federal budget.";
+pub const DEFAULT_LP_HEADLINE: &str = "Decide the federal budget yourself.";
+pub const DEFAULT_LP_PITCH: &str =
+    "Tax N Vote lets every taxpayer allocate their Tax Dollar across the federal \
+     budget — and turns the total into direct feedback to Congress. One taxpayer, one vote.";
+pub const DEFAULT_LP_WHY: &str =
+    "Right now, political parties are the gatekeepers to government — and it takes \
+     money to play. Lobbyists, donors, and PACs shape what gets funded long before \
+     the public is ever asked.\n\n\
+     Tax N Vote routes around the gate. It's direct budget feedback to Congress: you \
+     set the numbers, and the aggregate — the People's Budget — shows what the public \
+     actually wants funded. No party platform, no donor class.\n\n\
+     And in the process, people learn the budget. To spend your dollar you have to see \
+     where it really goes — the agencies, the programs, the trade-offs. An informed \
+     public is half the point.";
+pub const DEFAULT_LP_PB_INTRO: &str =
+    "When thousands of taxpayers each set their own priorities, the total is a budget \
+     written by the public — not by parties or donors.";
+pub const DEFAULT_LP_PILLARS: &str =
+    "Bypasses political parties — no platform, no caucus, no whip; just your allocation.\n\
+     Bypasses money — no lobbyists, PACs, or ad budgets move a single dollar.\n\
+     Hard data — every submission is one taxpayer's real numbers; measured, not polled.";
+pub const DEFAULT_LP_PB_FOOTER: &str =
+    "At scale, that's a credible, data-driven picture of what citizens actually want \
+     funded — a counterweight to the appropriations process.";
+
+/// Effective default for a setting key when the admin hasn't stored one. Single
+/// source of truth shared by the public config endpoint and the admin Config tab
+/// (which pre-fills every field with its current effective value). Booleans must
+/// match the `setting_or(..)` defaults used at each call site.
+pub fn default_setting(key: &str) -> &'static str {
+    match key {
+        "registration_open" => "true",
+        "demo_identity_enabled" => "true",
+        "maintenance_mode" => "false",
+        "data_public" => "false",
+        "subtitle_1" => DEFAULT_SUBTITLE_1,
+        "subtitle_2" => DEFAULT_SUBTITLE_2,
+        "lp_kicker" => DEFAULT_LP_KICKER,
+        "lp_headline" => DEFAULT_LP_HEADLINE,
+        "lp_pitch" => DEFAULT_LP_PITCH,
+        "lp_why" => DEFAULT_LP_WHY,
+        "lp_pb_intro" => DEFAULT_LP_PB_INTRO,
+        "lp_pillars" => DEFAULT_LP_PILLARS,
+        "lp_pb_footer" => DEFAULT_LP_PB_FOOTER,
+        _ => "",
+    }
+}

@@ -1,0 +1,25 @@
+[Unit]
+Description=Tax N Vote — demo (name + PIN) build
+Documentation=https://github.com/greenpdx/TaxNVote26
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tnv
+Group=tnv
+WorkingDirectory=/opt/tnv/demo
+EnvironmentFile=/etc/tnv/demo.env
+ExecStart=/opt/tnv/demo/tnv-server
+Restart=on-failure
+RestartSec=5
+
+# Hardening — the app only needs to write to /var/lib/tnv (e.g. SQLite).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/tnv
+
+[Install]
+WantedBy=multi-user.target

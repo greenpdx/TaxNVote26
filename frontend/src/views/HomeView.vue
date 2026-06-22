@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { useBudgetStore } from '../stores/budget'
 import { useSessionStore } from '../stores/session'
 import NodeRow from '../components/NodeRow.vue'
+import AppHeader from '../components/AppHeader.vue'
 import AuthDialog from '../components/AuthDialog.vue'
 import TemplatesView from '../components/TemplatesView.vue'
 import ResultsView from '../components/ResultsView.vue'
@@ -11,22 +12,11 @@ import HelpDialog from '../components/HelpDialog.vue'
 import ReceiptDialog from '../components/ReceiptDialog.vue'
 import {
   buildTaxDollarCsv, submitTaxDollar, buildTemplateCsv, createTemplate,
-  myTaxDollars, parseTemplateEntries, getPublicConfig,
+  myTaxDollars, parseTemplateEntries,
 } from '../api'
 
 const store = useBudgetStore()
 const session = useSessionStore()
-
-// Admin-configurable header subtitles (fetched publicly; defaults until loaded).
-const subtitle1 = ref('Your Tax Dollar, Your Voice')
-const subtitle2 = ref('')
-onMounted(async () => {
-  try {
-    const cfg = await getPublicConfig()
-    subtitle1.value = cfg.subtitle_1
-    subtitle2.value = cfg.subtitle_2
-  } catch { /* keep defaults if the config endpoint is unreachable */ }
-})
 
 type View = 'budget' | 'templates' | 'results' | 'admin'
 const view = ref<View>('budget')
@@ -135,24 +125,7 @@ async function loadMine() {
     <AuthDialog :open="showLogin" @close="showLogin = false" @success="onLoginSuccess" />
     <HelpDialog :open="showHelp" @close="showHelp = false" />
     <ReceiptDialog :open="showReceipt" :receipt="submittedReceipt || ''" :code="submittedCode" :csv="submittedCsv" @close="showReceipt = false" />
-    <header class="header">
-      <div class="header-top">
-        <div class="title-group">
-          <h1 class="title">Tax N Vote</h1>
-          <div class="subtitle-row">
-            <span class="subtitle">{{ subtitle1 }}</span>
-            <span v-if="subtitle2" class="subtitle subtitle-2">{{ subtitle2 }}</span>
-          </div>
-        </div>
-        <div class="id-widget">
-          <template v-if="session.isIdentified">
-            <span class="id-who">👤 {{ session.name }}</span>
-            <button class="abtn" @click="session.logout()">Logout</button>
-          </template>
-          <button v-else class="abtn login" @click="showLogin = true">Login</button>
-        </div>
-      </div>
-
+    <AppHeader @login="showLogin = true">
       <nav class="tabs">
         <button :class="{ active: view === 'budget' }" @click="view = 'budget'">Budget</button>
         <button :class="{ active: view === 'templates' }" @click="view = 'templates'">Templates</button>
@@ -161,7 +134,7 @@ async function loadMine() {
       </nav>
 
       <div v-if="msg" class="flash" :class="{ err: msgErr }" @click="msg = null">{{ msg }}</div>
-    </header>
+    </AppHeader>
 
     <!-- ─── Budget view ─── -->
     <template v-if="view === 'budget'">

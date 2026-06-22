@@ -31,6 +31,7 @@ body {
 }
 .header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .title-group { min-width: 0; }
+.title-link { text-decoration: none; }
 .title { font-size: 20px; font-weight: 800; color: #f59e0b; letter-spacing: -0.02em; line-height: 1.2; }
 .subtitle-row { display: flex; align-items: baseline; flex-wrap: wrap; }
 .subtitle { font-size: 12px; color: #64748b; }

@@ -72,7 +72,17 @@ export async function identify(name: string, secret: string): Promise<{ token: s
   return res.json()
 }
 
-export interface PublicConfig { subtitle_1: string; subtitle_2: string }
+export interface PublicConfig {
+  subtitle_1: string
+  subtitle_2: string
+  lp_kicker: string
+  lp_headline: string
+  lp_pitch: string
+  lp_why: string
+  lp_pb_intro: string
+  lp_pillars: string
+  lp_pb_footer: string
+}
 
 /** Public, unauthenticated runtime config (header subtitles). */
 export async function getPublicConfig(): Promise<PublicConfig> {
