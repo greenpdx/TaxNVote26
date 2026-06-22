@@ -18,13 +18,11 @@ frontend/src/wasm/
 # wasm-pack scratch input (symlink to data/budauth.csv)
 crates/tnv-budget-tree/data/
 
-# Data
-data/store.json
-data/*.bak
-data/*.db
-data/*.db-journal
-data/*.db-wal
-data/*.db-shm
+# Data — ignore everything under data/ except the two tracked files
+# (local budget zips, tnv.db, .bak, store.json, etc. stay out of git).
+data/*
+!data/README.md
+!data/budauth.csv
 
 # Environment
 .env
